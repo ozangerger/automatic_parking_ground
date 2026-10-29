@@ -8,7 +8,7 @@ Checks: >
   readability-identifier-naming,
   -bugprone-easily-swappable-parameters
 WarningsAsErrors: ''
-HeaderFilterRegex: '.*/(msgs|geometry|sim_core|world|plant|sensors|vehicle_if|fusion|planning|control|logging)/include/.*'
+HeaderFilterRegex: '.*/(msgs|geometry|sim_core|world|plant|sensors|vehicle_if|fusion|planning|control|logging|app)/include/.*'
 CheckOptions:
   readability-identifier-naming.NamespaceCase: lower_case
   readability-identifier-naming.ClassCase: CamelCase

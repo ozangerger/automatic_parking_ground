@@ -43,6 +43,14 @@ struct AlgorithmSettings {
   StateSource controller_state{StateSource::Estimate};
 };
 
+// One step of an open-loop command script: from `t` on, the vehicle is commanded like this.
+struct ScriptedCommand {
+  SimTime t{};
+  double steer_angle{0.0};  // rad
+  double accel{0.0};        // m/s^2 along the direction of travel set by `gear`
+  Gear gear{Gear::Park};
+};
+
 struct Scenario {
   std::string name;
   std::uint64_t seed{0};
@@ -50,6 +58,7 @@ struct Scenario {
   Pose2D start_pose;
   std::optional<SlotSpec> slot;
   std::vector<ObstacleSpec> obstacles;
+  std::vector<ScriptedCommand> open_loop;  // sorted by time; empty = no scripted commands
   NoiseSettings noise;
   AlgorithmSettings algorithms;
 };

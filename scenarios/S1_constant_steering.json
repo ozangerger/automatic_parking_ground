@@ -1,0 +1,11 @@
+{
+  "name": "S1_constant_steering",
+  "seed": 1,
+  "duration_s": 32.0,
+  "start_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+  "algorithms": {"estimator": "dead_reckoning", "uss_updates": false},
+  "open_loop": [
+    {"t_s": 0.0, "gear": "Drive", "steer": 0.3, "accel": 0.5},
+    {"t_s": 4.0, "gear": "Drive", "steer": 0.3, "accel": 0.0}
+  ]
+}

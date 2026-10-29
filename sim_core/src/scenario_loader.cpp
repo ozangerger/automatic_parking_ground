@@ -61,6 +61,47 @@ ObstacleSpec parse_obstacle(const Json& object, const std::string& where) {
   return obstacle;
 }
 
+Gear parse_gear(const std::string& text, const std::string& where) {
+  if (text == "Park") {
+    return Gear::Park;
+  }
+  if (text == "Reverse") {
+    return Gear::Reverse;
+  }
+  if (text == "Neutral") {
+    return Gear::Neutral;
+  }
+  if (text == "Drive") {
+    return Gear::Drive;
+  }
+  fail("'" + where + ".gear' must be Park, Reverse, Neutral or Drive, got \"" + text + "\"");
+}
+
+std::vector<ScriptedCommand> parse_open_loop(const Json& array) {
+  if (!array.is_array()) {
+    fail("'open_loop' must be an array");
+  }
+  std::vector<ScriptedCommand> script;
+  for (std::size_t i = 0; i < array.size(); ++i) {
+    const std::string where = "open_loop[" + std::to_string(i) + "]";
+    const Json& entry = array[i];
+    ScriptedCommand cmd;
+    const double t_s = require(entry, "t_s", where).get<double>();
+    if (!std::isfinite(t_s) || t_s < 0.0) {
+      fail("'" + where + ".t_s' must not be negative");
+    }
+    cmd.t = from_seconds(t_s);
+    cmd.gear = parse_gear(require(entry, "gear", where).get<std::string>(), where);
+    cmd.steer_angle = entry.value("steer", 0.0);
+    cmd.accel = entry.value("accel", 0.0);
+    if (!script.empty() && cmd.t <= script.back().t) {
+      fail("'" + where + ".t_s' must be later than the previous entry");
+    }
+    script.push_back(cmd);
+  }
+  return script;
+}
+
 EstimatorKind parse_estimator(const std::string& text) {
   if (text == "ekf") {
     return EstimatorKind::Ekf;
@@ -106,6 +147,10 @@ Scenario parse_document(const Json& doc) {
       scenario.obstacles.push_back(
           parse_obstacle(obstacles[i], "obstacles[" + std::to_string(i) + "]"));
     }
+  }
+
+  if (doc.contains("open_loop")) {
+    scenario.open_loop = parse_open_loop(doc.at("open_loop"));
   }
 
   if (doc.contains("noise")) {

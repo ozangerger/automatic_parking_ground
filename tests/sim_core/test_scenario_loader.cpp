@@ -131,6 +131,44 @@ TEST(ScenarioLoader, RejectsInvalidValues) {
             std::string::npos);
 }
 
+TEST(ScenarioLoader, ParsesTheOpenLoopScript) {
+  const Scenario s = parse_scenario(R"({
+    "name": "script", "seed": 1, "duration_s": 5, "start_pose": {"x": 0, "y": 0, "yaw": 0},
+    "open_loop": [
+      {"t_s": 0, "gear": "Drive", "steer": 0.3, "accel": 1.5},
+      {"t_s": 2.5, "gear": "Reverse", "accel": -0.5},
+      {"t_s": 4, "gear": "Park"}
+    ]})");
+  ASSERT_EQ(s.open_loop.size(), 3U);
+  EXPECT_EQ(s.open_loop[0].t.count(), 0);
+  EXPECT_EQ(s.open_loop[0].gear, Gear::Drive);
+  EXPECT_NEAR(s.open_loop[0].steer_angle, 0.3, 1e-12);
+  EXPECT_NEAR(s.open_loop[0].accel, 1.5, 1e-12);
+  EXPECT_EQ(s.open_loop[1].t.count(), 2'500'000'000);
+  EXPECT_EQ(s.open_loop[1].gear, Gear::Reverse);
+  EXPECT_NEAR(s.open_loop[1].steer_angle, 0.0, 1e-12);  // defaults to 0
+  EXPECT_EQ(s.open_loop[2].gear, Gear::Park);
+}
+
+TEST(ScenarioLoader, AScenarioWithoutAScriptHasNone) {
+  EXPECT_TRUE(parse_scenario(kMinimalScenario).open_loop.empty());
+}
+
+TEST(ScenarioLoader, RejectsInvalidScripts) {
+  const std::string head = R"({"name": "a", "seed": 1, "duration_s": 5,
+                               "start_pose": {"x":0,"y":0,"yaw":0}, "open_loop": )";
+  EXPECT_NE(error_message(head + R"([{"t_s": 0, "gear": "Sport"}]})").find("gear"),
+            std::string::npos);
+  EXPECT_NE(error_message(head + R"([{"gear": "Drive"}]})").find("open_loop[0].t_s"),
+            std::string::npos);
+  EXPECT_NE(error_message(head + R"([{"t_s": -1, "gear": "Drive"}]})").find("t_s"),
+            std::string::npos);
+  EXPECT_NE(error_message(head + R"([{"t_s": 0, "gear": "Drive"}, {"t_s": 0, "gear": "Park"}]})")
+                .find("later"),
+            std::string::npos);
+  EXPECT_NE(error_message(head + R"({"t_s": 0}})").find("open_loop"), std::string::npos);
+}
+
 TEST(ScenarioLoader, RejectsWrongTypesAndMalformedJson) {
   EXPECT_NE(error_message(R"({"name": "a", "seed": "one", "duration_s": 1,
                               "start_pose": {"x":0,"y":0,"yaw":0}})"),
