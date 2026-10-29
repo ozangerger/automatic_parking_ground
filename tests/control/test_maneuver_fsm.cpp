@@ -105,9 +105,9 @@ TEST(ManeuverFsm, AbortsWhenAnEchoStaysCloserThanTheLimit) {
   (void)fsm.update(input(0.0, Direction::Forward, 5.0, 0.5));
   EXPECT_EQ(fsm.update(input(1.00, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
             ManeuverState::Approach);
-  EXPECT_EQ(fsm.update(input(1.10, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
+  EXPECT_EQ(fsm.update(input(1.03, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
             ManeuverState::Approach);
-  const ManeuverOutput out = fsm.update(input(1.12, Direction::Forward, 4.0, 0.5, true, 0.2));
+  const ManeuverOutput out = fsm.update(input(1.04, Direction::Forward, 4.0, 0.5, true, 0.2));
   EXPECT_EQ(out.state, ManeuverState::Abort);
   EXPECT_EQ(out.gear, Gear::Park);
   EXPECT_FALSE(out.drive);
@@ -118,13 +118,13 @@ TEST(ManeuverFsm, ALoneLowEchoDoesNotAbort) {
   ManeuverFsm fsm;
   (void)fsm.update(input(0.0, Direction::Forward, 5.0, 0.5));
   (void)fsm.update(input(1.00, Direction::Forward, 4.0, 0.5, true, 0.2));
-  (void)fsm.update(input(1.04, Direction::Forward, 4.0, 0.5, true, 0.2));
-  (void)fsm.update(input(1.06, Direction::Forward, 4.0, 0.5, true, 1.5));  // the outlier is gone
+  (void)fsm.update(input(1.02, Direction::Forward, 4.0, 0.5, true, 0.2));
+  (void)fsm.update(input(1.03, Direction::Forward, 4.0, 0.5, true, 1.5));  // the outlier is gone
   EXPECT_EQ(fsm.update(input(1.10, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
             ManeuverState::Approach);
-  EXPECT_EQ(fsm.update(input(1.20, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
+  EXPECT_EQ(fsm.update(input(1.12, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
             ManeuverState::Approach);
-  EXPECT_EQ(fsm.update(input(1.23, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
+  EXPECT_EQ(fsm.update(input(1.14, Direction::Forward, 4.0, 0.5, true, 0.2)).state,
             ManeuverState::Abort);
 }
 
@@ -140,7 +140,7 @@ TEST(ManeuverFsm, TheLimitItselfDoesNotAbort) {
 TEST(ManeuverFsm, TheAbortRangeGrowsWithTheSpeedByTheStoppingDistance) {
   const ManeuverFsm fsm;
   EXPECT_NEAR(fsm.abort_range_at(0.0), 0.25, 1e-12);
-  EXPECT_NEAR(fsm.abort_range_at(1.0), 0.25 + 0.3 + 0.25, 1e-12);  // reaction 0.3 s, 2 m/s^2
+  EXPECT_NEAR(fsm.abort_range_at(1.0), 0.25 + 0.5 + 0.25, 1e-12);  // reaction 0.5 s, 2 m/s^2
   EXPECT_NEAR(fsm.abort_range_at(-1.0), fsm.abort_range_at(1.0), 1e-12);
 
   // An echo at 0.7 m is harmless to a car creeping at 0.1 m/s but not to one driving at 1 m/s.

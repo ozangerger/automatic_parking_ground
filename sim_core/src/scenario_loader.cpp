@@ -220,6 +220,15 @@ Scenario parse_document(const Json& doc) {
     parse_path(doc.at("path"), scenario);
   }
 
+  if (doc.contains("acceptance")) {
+    const Json& acceptance = doc.at("acceptance");
+    AcceptanceSpec spec;
+    spec.lateral = require_positive(acceptance, "lateral_m", "acceptance");
+    spec.longitudinal = require_positive(acceptance, "longitudinal_m", "acceptance");
+    spec.yaw_deg = require_positive(acceptance, "yaw_deg", "acceptance");
+    scenario.acceptance = spec;
+  }
+
   if (doc.contains("noise")) {
     const Json& noise = doc.at("noise");
     scenario.noise.enabled = noise.value("enabled", true);

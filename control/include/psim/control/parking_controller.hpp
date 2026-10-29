@@ -21,6 +21,11 @@ struct ControlParams {
   std::vector<std::uint8_t> front_sensors{0, 1, 2, 3};
   std::vector<std::uint8_t> rear_sensors{4, 5, 6, 7};
   SimTime max_echo_age{300'000'000};  // older echoes are not used for the abort decision
+  // A real obstacle returns a low echo on message after message, an outlier does not: a sensor
+  // counts only after this many consecutive low echoes (a missing echo neither counts nor breaks
+  // the series). A burst of random outliers (S4: 60 % of the readings of a dozen sensors for 1.5 s)
+  // gives three low readings in a row from one sensor in 5-10 % of the runs, four in none of 40.
+  int echo_confirmations{4};
 };
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
 
@@ -42,14 +47,24 @@ class ParkingController final : public IController {
 
  private:
   [[nodiscard]] bool is_new_path(const Path& path);
-  [[nodiscard]] std::optional<double> range_ahead(SimTime now, Direction direction,
-                                                  gsl::span<const UssMsg> latest_uss) const;
+  // Counts the low echoes of every sensor, one per new message.
+  void track_echoes(SimTime now, double speed, gsl::span<const UssMsg> latest_uss);
+  // The nearest confirmed low echo of the sensors that look in the driving direction.
+  [[nodiscard]] std::optional<double> range_ahead(SimTime now, Direction direction) const;
 
   ControlParams params_;
   PathCursor cursor_;
   LateralController lateral_;
   LongitudinalController longitudinal_;
   ManeuverFsm fsm_;
+
+  struct EchoTrack {
+    std::optional<SimTime> last_stamp;  // of the newest message seen
+    int low_streak{0};                  // consecutive low echoes
+    SimTime last_low_stamp{};           // stamp of the latest low echo
+    double last_low_range{0.0};
+  };
+  std::vector<EchoTrack> echo_tracks_;  // indexed by sensor id
 
   // What identifies the path being driven (size and the pose and speed of its first and last
   // point).

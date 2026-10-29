@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <optional>
 
 #include "closed_loop.hpp"
 
@@ -249,13 +251,72 @@ TEST(ParkingControllerAbort, ALoneOutlierEchoDoesNotAbort) {
   ClosedLoop sim{Pose2D{}, path_of({line_segment(8.0)})};
   sim.uss_source = [](SimTime t, std::vector<UssMsg>& uss) {
     uss.clear();
-    // One front sensor reads 0.2 m for 50 ms (until its next sample replaces it), like an outlier.
+    // One front sensor reads 0.2 m in a single message (stamped 3.0 s, held until its next sample
+    // replaces it 50 ms later), like an outlier.
     if (t >= from_seconds(3.0) && t < from_seconds(3.05)) {
-      uss.push_back(echo(t, 2, 0.2));
+      uss.push_back(echo(from_seconds(3.0), 2, 0.2));
     }
   };
   sim.run(12.0);
   EXPECT_EQ(sim.last().state, ManeuverState::Done);
+}
+
+// The newest message of one sensor per 50 ms, as the ultrasonic array delivers them.
+std::function<void(SimTime, std::vector<UssMsg>&)> messages_every_50_ms(
+    std::function<std::optional<UssMsg>(std::int64_t index, SimTime stamp)> message) {
+  return [message](SimTime t, std::vector<UssMsg>& uss) {
+    uss.clear();
+    const std::int64_t index = t.count() / 50'000'000;
+    const std::optional<UssMsg> msg = message(index, SimTime{index * 50'000'000});
+    if (msg.has_value() && t >= from_seconds(3.0)) {
+      uss.push_back(*msg);
+    }
+  };
+}
+
+TEST(ParkingControllerAbort, LowEchoesFromDifferentSensorsDoNotAddUp) {
+  // An outlier burst: at every moment one of the four front sensors holds a low echo, but no
+  // sensor has three in a row (each reads low at every third message, offset by its id).
+  ClosedLoop sim{Pose2D{}, path_of({line_segment(8.0)})};
+  sim.uss_source = [](SimTime t, std::vector<UssMsg>& uss) {
+    uss.clear();
+    if (t < from_seconds(3.0)) {
+      return;
+    }
+    const std::int64_t index = t.count() / 50'000'000;
+    for (std::uint8_t id = 0; id < 4; ++id) {
+      const bool low = (index + id) % 3 == 0;
+      uss.push_back(echo(SimTime{index * 50'000'000}, id, low ? 0.2 : 3.0));
+    }
+  };
+  sim.run(12.0);
+  EXPECT_EQ(sim.last().state, ManeuverState::Done);
+}
+
+TEST(ParkingControllerAbort, ALowEchoBetweenHighOnesIsNotConfirmed) {
+  // Low, low, high, low, low, high ...: no three in a row from the sensor.
+  ClosedLoop sim{Pose2D{}, path_of({line_segment(8.0)})};
+  sim.uss_source = messages_every_50_ms([](std::int64_t index, SimTime stamp) {
+    return std::optional<UssMsg>{echo(stamp, 1, index % 3 == 2 ? 3.0 : 0.2)};
+  });
+  sim.run(12.0);
+  EXPECT_EQ(sim.last().state, ManeuverState::Done);
+}
+
+TEST(ParkingControllerAbort, MissingEchoesDoNotBreakTheSeriesOfARealObstacle) {
+  // Low, no echo, low, no echo, low ...: a real obstacle with dropouts.
+  ClosedLoop sim{Pose2D{}, path_of({line_segment(30.0)})};
+  sim.uss_source = messages_every_50_ms([](std::int64_t index, SimTime stamp) {
+    if (index % 2 == 0) {
+      return std::optional<UssMsg>{echo(stamp, 1, 0.2)};
+    }
+    UssMsg none;
+    none.stamp = stamp;
+    none.id = 1;
+    return std::optional<UssMsg>{none};
+  });
+  sim.run(8.0);
+  EXPECT_EQ(sim.last().state, ManeuverState::Abort);
 }
 
 TEST(ParkingControllerAbort, StaleAndMissingEchoesAreIgnored) {

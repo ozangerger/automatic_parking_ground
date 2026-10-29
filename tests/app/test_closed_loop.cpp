@@ -109,9 +109,9 @@ TEST(ClosedLoop, DrivesForwardStopsAtTheCuspAndOnlyThenReverses) {
     }
   }
   EXPECT_GT(fastest, 0.9);
-  EXPECT_LT(slowest, -0.9);
-  EXPECT_LE(fastest, 1.10);  // profile 1 m/s; measured overshoot 6 % on the estimate
-  EXPECT_GE(slowest, -1.10);
+  EXPECT_LT(slowest, -0.55);  // reversing at the 0.6 m/s of the path
+  EXPECT_LE(fastest, 1.10);   // profile 1 m/s; measured overshoot 6 % on the estimate
+  EXPECT_GE(slowest, -0.66);
   ASSERT_LT(last_forward, first_reverse);  // all forward motion comes first
 
   // In between the car stands (the gear only changes there) for the confirmation and dwell time.

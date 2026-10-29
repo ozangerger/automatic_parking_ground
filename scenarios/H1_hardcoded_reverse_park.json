@@ -14,8 +14,8 @@
     "spacing_m": 0.1,
     "segments": [
       {"type": "line", "length_m": 4.0, "direction": "forward", "speed": 1.0},
-      {"type": "arc", "radius_m": 5.0, "angle_rad": 1.5707963267948966, "turn": "right", "direction": "reverse", "speed": 1.0},
-      {"type": "line", "length_m": 3.0, "direction": "reverse", "speed": 1.0}
+      {"type": "arc", "radius_m": 5.0, "angle_rad": 1.5707963267948966, "turn": "right", "direction": "reverse", "speed": 0.6},
+      {"type": "line", "length_m": 3.0, "direction": "reverse", "speed": 0.6}
     ]
   }
 }

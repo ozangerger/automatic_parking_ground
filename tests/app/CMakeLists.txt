@@ -1,5 +1,5 @@
 psim_add_test(app_tests
-  SOURCES test_scripted_commander.cpp test_sim_runner.cpp test_scenarios.cpp test_closed_loop.cpp test_planned_parking.cpp
+  SOURCES test_scripted_commander.cpp test_sim_runner.cpp test_scenarios.cpp test_closed_loop.cpp test_planned_parking.cpp test_metrics.cpp
   DEPS sim_runner)
 target_compile_definitions(app_tests PRIVATE
   PSIM_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/scenarios")
@@ -7,7 +7,7 @@ target_compile_definitions(app_tests PRIVATE
 # Whole-scenario acceptance runs with several estimators and seeds: seconds each under the
 # sanitizers. Skip them for a quick loop with `ctest -LE slow`.
 psim_add_test(app_slow_tests
-  SOURCES test_s4_lot.cpp
+  SOURCES test_s4_lot.cpp test_parking_seeds.cpp
   DEPS sim_runner
   LABELS slow)
 target_compile_definitions(app_slow_tests PRIVATE
@@ -30,3 +30,14 @@ add_test(NAME app.sim_main_rejects_missing_scenario
 set_tests_properties(app.sim_main_rejects_missing_scenario PROPERTIES WILL_FAIL TRUE)
 add_test(NAME app.sim_main_prints_usage_without_arguments COMMAND sim_main)
 set_tests_properties(app.sim_main_prints_usage_without_arguments PROPERTIES WILL_FAIL TRUE)
+
+# The batch tool end to end: two seeds of S3, must exit 0 and write its table.
+add_test(NAME app.sim_table_runs_s3
+         COMMAND sim_table ${CMAKE_SOURCE_DIR}/scenarios/S3_perpendicular_estimate.json
+                 --seeds 2 --out ${CMAKE_BINARY_DIR}/smoke/S3_table)
+add_test(NAME app.sim_table_rejects_an_unknown_estimator
+         COMMAND sim_table ${CMAKE_SOURCE_DIR}/scenarios/S3_perpendicular_estimate.json
+                 --estimators magic)
+set_tests_properties(app.sim_table_rejects_an_unknown_estimator PROPERTIES WILL_FAIL TRUE)
+add_test(NAME app.sim_table_prints_usage_without_arguments COMMAND sim_table)
+set_tests_properties(app.sim_table_prints_usage_without_arguments PROPERTIES WILL_FAIL TRUE)

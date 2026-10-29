@@ -1,0 +1,15 @@
+{
+  "name": "S3_perpendicular_estimate",
+  "seed": 1,
+  "duration_s": 40.0,
+  "start_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+  "slot": {"pose": {"x": -1.0, "y": -8.0, "yaw": 1.5707963267948966}, "width": 2.6, "length": 5.5},
+  "obstacles": [
+    {"name": "car_left", "vertices": [[-4.2, -8.7], [-2.4, -8.7], [-2.4, -4.2], [-4.2, -4.2]]},
+    {"name": "car_right", "vertices": [[0.4, -8.7], [2.2, -8.7], [2.2, -4.2], [0.4, -4.2]]},
+    {"name": "back_wall", "vertices": [[-4.2, -10.0], [2.2, -10.0], [2.2, -9.6], [-4.2, -9.6]]}
+  ],
+  "algorithms": {"estimator": "ekf", "uss_updates": true, "controller_state": "estimate",
+                 "planner": "perpendicular"},
+  "acceptance": {"lateral_m": 0.10, "longitudinal_m": 0.10, "yaw_deg": 2.0}
+}

@@ -24,12 +24,13 @@ struct ManeuverParams {
   // moving vehicle needs more: the confirmation, the command delay and the braking distance
   // also pass before it stands, so the range grows with the speed (see abort_range_at).
   double abort_range{0.25};         // m
-  double abort_reaction_time{0.3};  // s: confirmation, bus and actuator delay, sensor age
+  double abort_reaction_time{0.5};  // s: confirmation, bus and actuator delay, sensor age
   double abort_decel{2.0};          // m/s^2: what Park brakes with (the vehicle's limit)
-  SimTime abort_confirm{
-      120'000'000};            // the low range must persist this long (one outlier must not abort)
-  double end_tolerance{0.05};  // m: a segment is finished within this distance of its end ...
-  double standstill_speed{0.05};            // m/s ... and below this speed
+  // The echo must be low for this long. The controller already confirms an echo over several
+  // messages (see ControlParams::echo_confirmations); this only bridges two control steps.
+  SimTime abort_confirm{40'000'000};
+  double end_tolerance{0.05};     // m: a segment is finished within this distance of its end ...
+  double standstill_speed{0.05};  // m/s ... and below this speed
   SimTime standstill_confirm{200'000'000};  // ... for this long
   SimTime gear_dwell{
       600'000'000};  // after switching to the next segment: steer and engage the gear, then go

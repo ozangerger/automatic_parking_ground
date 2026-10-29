@@ -87,6 +87,25 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 - Scenarios: `S2_perpendicular_truth` (controller and planner on truth, PLAN section 9 limits);
   `H1_hardcoded_reverse_park` stays as the hardcoded-path example.
 
+## Metrics, S3/S4 and the table (app/)
+- `MetricsSink` (evaluation only, on the truth): final lateral / along-slot / yaw error in the slot frame,
+  cross-track (distance to the path the controller was given), clearance and collision, settled time,
+  steering travel, max lateral acceleration, estimate RMSE. `meets(metrics, AcceptanceSpec)`; a scenario
+  can carry `"acceptance": {"lateral_m", "longitudinal_m", "yaw_deg"}` (S2: 5 cm / 10 cm / 1 deg, S3: 10 / 10 / 2).
+- `sim_main` prints the metrics (and PASS/FAIL) of a closed-loop run. `sim_table SCENARIO.json [--seeds N]
+  [--estimators ekf,dead_reckoning] [--states estimate,truth] [--out DIR]` runs every combination over the
+  seeds and writes `out/<scenario>/table.md` (mean / worst per estimator and state source) and `runs.csv`.
+- `S3_perpendicular_estimate`: S2 with the controller on the EKF estimate. `S4_perpendicular_degraded`: S3 with
+  3 % wheel scale error, 0.01 rad/s gyro bias, 10 % ultrasonic dropouts and a 1.5 s outlier burst at 14 s
+  (no acceptance limits: it reports metrics). `S4_lot_drive_by` stays the open-loop checkpoint-2 scenario.
+- Abort: an echo counts only after `echo_confirmations` (4) consecutive low messages of one sensor (a missing
+  echo neither counts nor breaks the series); the FSM adds 40 ms. With 3 the S4 burst aborted ~5-10 % of the
+  EKF runs. The abort range grows with speed (0.25 m + 0.5 s x v + v^2/4 m). It is not map-aware: an echo is
+  low if it is short, also when the prior map explains it (a 0.4 m gap beside a parked car at 1 m/s aborts:
+  paths reverse at 0.6 m/s). Comparing the echo with the range the map predicts is the proper fix.
+- Plots go in `out/<scenario>/` (`single.png`, `compare.png`, `*_dark.png`); `plot.py` draws each run's own
+  truth in a closed-loop overlay, because the controller works on the estimate.
+
 ## Tests
 - Sanitizer presets build with `-O1 -g`: Eigen at `-O0` under ASan is 15x slower.
 - `ctest --preset linux-gcc-debug -LE slow` skips the whole-scenario runs (`app_slow_tests`).

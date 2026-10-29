@@ -234,6 +234,28 @@ TEST(ScenarioLoader, APlannerNeedsASlotAndExcludesAGivenPath) {
             std::string::npos);
 }
 
+TEST(ScenarioLoader, ParsesTheAcceptanceLimits) {
+  const std::string head = R"({"name": "a", "seed": 1, "duration_s": 5,
+      "start_pose": {"x":0,"y":0,"yaw":0}, "acceptance": )";
+  const Scenario s =
+      parse_scenario(head + R"({"lateral_m": 0.05, "longitudinal_m": 0.1, "yaw_deg": 1.0}})");
+  ASSERT_TRUE(s.acceptance.has_value());
+  EXPECT_NEAR(s.acceptance->lateral, 0.05, 1e-12);
+  EXPECT_NEAR(s.acceptance->longitudinal, 0.1, 1e-12);
+  EXPECT_NEAR(s.acceptance->yaw_deg, 1.0, 1e-12);
+  EXPECT_FALSE(parse_scenario(kMinimalScenario).acceptance.has_value());
+}
+
+TEST(ScenarioLoader, RejectsIncompleteOrNonPositiveAcceptanceLimits) {
+  const std::string head = R"({"name": "a", "seed": 1, "duration_s": 5,
+      "start_pose": {"x":0,"y":0,"yaw":0}, "acceptance": )";
+  EXPECT_NE(error_message(head + R"({"lateral_m": 0.05, "longitudinal_m": 0.1}})").find("yaw_deg"),
+            std::string::npos);
+  EXPECT_NE(error_message(head + R"({"lateral_m": 0, "longitudinal_m": 0.1, "yaw_deg": 1}})")
+                .find("lateral_m"),
+            std::string::npos);
+}
+
 TEST(ScenarioLoader, AScenarioWithoutAScriptHasNone) {
   EXPECT_TRUE(parse_scenario(kMinimalScenario).open_loop.empty());
 }

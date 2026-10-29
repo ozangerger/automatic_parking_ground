@@ -27,6 +27,14 @@ struct SlotSpec {
   double length{0.0};  // m
 };
 
+// The pass criterion of a parking scenario (PLAN.md section 9): the final pose of the vehicle
+// against the slot pose, measured on the truth. Checked by the metrics, not by the simulation.
+struct AcceptanceSpec {
+  double lateral{0.0};       // m, across the slot axis
+  double longitudinal{0.0};  // m, along it
+  double yaw_deg{0.0};
+};
+
 struct NoiseSettings {
   bool enabled{true};  // false = perfect sensors
   // Named overrides of sensor error-model parameters (e.g. "odom_scale_error").
@@ -71,6 +79,7 @@ struct Scenario {
   double path_spacing{kDefaultPathSpacing};  // m
   NoiseSettings noise;
   AlgorithmSettings algorithms;
+  std::optional<AcceptanceSpec> acceptance;  // none: the scenario only reports metrics
 };
 
 }  // namespace psim

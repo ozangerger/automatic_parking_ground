@@ -138,25 +138,44 @@ def draw_trajectory(ax, runs, scene, theme):
                 color=theme["ink_secondary"], linewidth=1.0, linestyle=(0, (1, 2)),
                 label="planned path", zorder=3)
 
-    truth = runs[0]["data"]
-    ax.plot(truth["truth_x"], truth["truth_y"], color=theme["truth"], linewidth=LINE_WIDTH,
-            label="truth", zorder=4)
-    for index, run in enumerate(runs):
-        ax.plot(run["data"]["est_x"], run["data"]["est_y"], color=theme["estimates"][index],
-                linewidth=LINE_WIDTH, linestyle=ESTIMATE_DASHES[index], label=run["label"],
-                zorder=5 + index)
-
-    # Start and end of the truth path; the car outline shows heading and size at both poses.
+    # In a closed-loop comparison every run drives its own trajectory (the controller works on the
+    # estimate), so each run gets its own truth line, in the run's color; the estimate is the thin
+    # dashed line beside it. Otherwise (open loop, or one run) all runs share one truth.
+    separate_truth = bool(path) and len(runs) > 1
     footprint = scene.get("car")
-    for index, name in ((0, "start"), (-1, "end")):
-        x, y, yaw = truth["truth_x"][index], truth["truth_y"][index], truth["truth_yaw"][index]
-        ax.plot([x], [y], marker="o", markersize=MARKER_SIZE, color=theme["truth"],
+
+    def mark_pose(index, name, data, color):
+        x, y, yaw = data["truth_x"][index], data["truth_y"][index], data["truth_yaw"][index]
+        ax.plot([x], [y], marker="o", markersize=MARKER_SIZE, color=color,
                 markeredgecolor=theme["surface"], markeredgewidth=2, linestyle="none", zorder=7)
         if footprint:
             ax.add_patch(PolygonPatch(car_in_world(footprint, x, y, yaw), closed=True, fill=False,
-                                      edgecolor=theme["ink_secondary"], linewidth=0.9, zorder=3))
+                                      edgecolor=color if separate_truth else theme["ink_secondary"],
+                                      linewidth=0.9, zorder=3))
         ax.annotate(name, (x, y), textcoords="offset points", xytext=(8, 8), fontsize=9,
                     color=theme["ink_secondary"])
+
+    if separate_truth:
+        for index, run in enumerate(runs):
+            color = theme["estimates"][index]
+            data = run["data"]
+            ax.plot(data["truth_x"], data["truth_y"], color=color, linewidth=LINE_WIDTH,
+                    label=f"{run['label']} truth", zorder=4 + index)
+            ax.plot(data["est_x"], data["est_y"], color=color, linewidth=1.0,
+                    linestyle=ESTIMATE_DASHES[index], label=f"{run['label']} estimate", zorder=5 + index)
+            mark_pose(-1, "end" if index == 0 else "", data, color)
+        mark_pose(0, "start", runs[0]["data"], theme["truth"])
+    else:
+        truth = runs[0]["data"]
+        ax.plot(truth["truth_x"], truth["truth_y"], color=theme["truth"], linewidth=LINE_WIDTH,
+                label="truth", zorder=4)
+        for index, run in enumerate(runs):
+            ax.plot(run["data"]["est_x"], run["data"]["est_y"], color=theme["estimates"][index],
+                    linewidth=LINE_WIDTH, linestyle=ESTIMATE_DASHES[index], label=run["label"],
+                    zorder=5 + index)
+        # Start and end of the truth path; the car outline shows heading and size at both poses.
+        mark_pose(0, "start", truth, theme["truth"])
+        mark_pose(-1, "end", truth, theme["truth"])
 
     ax.set_aspect("equal", adjustable="datalim")
     ax.autoscale_view()

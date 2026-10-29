@@ -12,10 +12,6 @@ bool same_point(const PathPoint& a, const PathPoint& b) {
          a.speed == b.speed;
 }
 
-bool contains(const std::vector<std::uint8_t>& ids, std::uint8_t id) {
-  return std::find(ids.begin(), ids.end(), id) != ids.end();
-}
-
 }  // namespace
 
 ParkingController::ParkingController(const ControlParams& params)
@@ -40,18 +36,48 @@ bool ParkingController::is_new_path(const Path& path) {
   return true;
 }
 
-std::optional<double> ParkingController::range_ahead(SimTime now, Direction direction,
-                                                     gsl::span<const UssMsg> latest_uss) const {
+void ParkingController::track_echoes(SimTime now, double speed,
+                                     gsl::span<const UssMsg> latest_uss) {
+  const double low = fsm_.abort_range_at(speed);
+  for (const UssMsg& msg : latest_uss) {
+    if (msg.id >= echo_tracks_.size()) {
+      echo_tracks_.resize(static_cast<std::size_t>(msg.id) + 1);
+    }
+    EchoTrack& track = echo_tracks_[msg.id];
+    if (now - msg.stamp > params_.max_echo_age) {
+      track.low_streak = 0;  // a sensor that went quiet does not keep its series
+      continue;
+    }
+    if (track.last_stamp == msg.stamp) {
+      continue;  // the same message as before
+    }
+    track.last_stamp = msg.stamp;
+    if (!msg.range.has_value()) {
+      continue;  // no echo: neither a low one nor proof that the obstacle is gone
+    }
+    if (*msg.range < low) {
+      ++track.low_streak;
+      track.last_low_stamp = msg.stamp;
+      track.last_low_range = *msg.range;
+    } else {
+      track.low_streak = 0;
+    }
+  }
+}
+
+std::optional<double> ParkingController::range_ahead(SimTime now, Direction direction) const {
   const std::vector<std::uint8_t>& ids =
       direction == Direction::Forward ? params_.front_sensors : params_.rear_sensors;
   std::optional<double> nearest;
-  for (const UssMsg& msg : latest_uss) {
-    if (!contains(ids, msg.id) || !msg.range.has_value() ||
-        now - msg.stamp > params_.max_echo_age) {
+  for (const std::uint8_t id : ids) {
+    if (id >= echo_tracks_.size()) {
       continue;
     }
-    if (!nearest.has_value() || msg.range.value_or(0.0) < nearest.value_or(0.0)) {
-      nearest = msg.range;
+    const EchoTrack& track = echo_tracks_[id];
+    const bool confirmed = track.low_streak >= params_.echo_confirmations &&
+                           now - track.last_low_stamp <= params_.max_echo_age;
+    if (confirmed && (!nearest.has_value() || track.last_low_range < *nearest)) {
+      nearest = track.last_low_range;
     }
   }
   return nearest;
@@ -62,6 +88,7 @@ VehicleCmd ParkingController::compute(SimTime now, const EstimatedState& estimat
   const bool new_path = is_new_path(path);
   if (new_path) {
     cursor_.reset(path);
+    echo_tracks_.clear();  // a new maneuver judges the obstacles by its own messages
     lateral_.reset();
     longitudinal_.reset();
   }
@@ -81,6 +108,7 @@ VehicleCmd ParkingController::compute(SimTime now, const EstimatedState& estimat
   const double yaw = estimate.x(2);
   const double v = estimate.x(3);
   cursor_.update(x, y);
+  track_echoes(now, std::abs(v), latest_uss);
 
   const Direction direction = cursor_.direction();
   const double travel_speed =
@@ -94,7 +122,7 @@ VehicleCmd ParkingController::compute(SimTime now, const EstimatedState& estimat
   input.last_segment = cursor_.is_last_segment();
   input.distance_to_go = cursor_.distance_to_segment_end();
   input.speed = std::abs(v);
-  input.range_ahead = range_ahead(now, direction, latest_uss);
+  input.range_ahead = range_ahead(now, direction);
   const ManeuverOutput out = fsm_.update(input);
 
   if (out.advance_segment) {
