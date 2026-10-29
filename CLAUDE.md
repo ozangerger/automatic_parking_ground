@@ -18,7 +18,7 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 - Format with `clang-format -i` before finishing a step.
 
 ## Run output and plots
-- `sim_main SCENARIO.json [--estimator ekf|dead_reckoning] [--out DIR]` writes `DIR/run.csv`
+- `sim_main SCENARIO.json [--estimator ekf|dead_reckoning] [--controller pure_pursuit|stanley|kanayama] [--out DIR]` writes `DIR/run.csv`
   (`CsvSink`, one row per tick, columns documented in `logging/include/psim/logging/csv_sink.hpp`) and
   `DIR/scene.json`. Default `DIR` is `out/<scenario>/<estimator>/`; `out/` is git-ignored.
 - Plot with `python3 tools/plot.py DIR` (`--dark`, `--show`, `-o file.png`). Two run directories of one
@@ -49,9 +49,7 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 
 ## Control (control/) and the hardcoded path
 - `ParkingController` (an `IController`): `PathCursor` (progress along the current segment, never
-  backwards), `LateralController` (pure pursuit on the rear axle, rate-limited steering, lookahead
-  1-4 m = 2 s x speed, sized for the larger of the actual and the profile speed; at 1 m/s under 2 m is
-  unstable with the actuator's delay, lag and rate limit, so slower speeds finish a path more exactly),
+  backwards), a `LateralController` (see "Steering laws" below; the choice is `ControlParams::lateral_kind`),
   `LongitudinalController` (reference speed = min(profile, braking curve), ramp, feedforward, lead
   compensation, PI) and `ManeuverFsm` (Idle/Approach/ReverseIn/Done/Abort).
 - A path is a list of segments by direction. The vehicle stops at the end of each, changes gear only at
@@ -66,6 +64,29 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 - `algorithms.controller_state: "truth"` (scenario field, honored only by the app) feeds the controller
   the true pose instead of the estimate.
 - `sim_main` prints the final maneuver state; `scene.json` carries the path and `plot.py` draws it dotted.
+
+## Steering laws (control/)
+- `LateralController` is the base class: it owns the wheel angle limit, the rate limit between calls and the
+  hold over the last 0.3 m of a segment; a law only implements `wanted_steer`. `make_lateral_controller(ControlParams)`
+  (`lateral_factory.hpp`) builds one; `ControlParams` has `lateral` (vehicle, shared) plus `pure_pursuit`, `stanley`, `kanayama`.
+- `PurePursuitController` (default): rear axle, lookahead 1-4 m = 2 s x speed, sized for the larger of the actual and
+  the profile speed; at 1 m/s under 2 m is unstable with the actuator's delay, lag and rate limit.
+- `StanleyController`: heading error + atan(k e / (softening + v)). The paths are rear axle paths, so forward it
+  runs against the *front axle's* path (each point moved one wheelbase along its heading, heading + atan(L kappa));
+  in reverse the leading axle is the rear axle, with the heading term's sign flipped, a larger heading gain (3: the
+  only damping there) and the path's steering angle added.
+- `KanayamaController`: tan(delta) = L (kappa + k_y e_y + sign(travel) k_theta sin e_theta), errors in the vehicle frame at the nearest
+  path point; e'' + k_theta e' + k_y e = 0 in path length, speed-independent. The sign of the heading term in reverse
+  matters (the original law's proof needs v_r > 0). Gains (0.6, 1.4) are limited by 1 m/s: k_y = 1 overshoots a 0.5 m offset by 0.35 m.
+- Stanley and Kanayama read the path curvature `preview_time` (0.5 s) x speed ahead: the curvature jumps where a line meets
+  an arc and the steering needs about a second to follow (without preview 0.4 m off the path there).
+- Choose per scenario with `"algorithms": {"controller": "pure_pursuit"|"stanley"|"kanayama"}`, per run with
+  `sim_main --controller X` (default DIR gets `_<controller>` appended unless pure pursuit) and for a table with
+  `sim_table --controllers a,b,c` (first column of table.md and runs.csv). `plot.py` overlays up to three closed-loop runs.
+- Result on S2-S4 (20 seeds): all three park within the limits with the EKF; they differ by 1 cm lateral and
+  0.1-0.2 deg yaw (pure pursuit finishes most exactly), so the nominal parking task hardly separates them. Stanley came
+  closest to the neighbors with dead reckoning (4.7 cm against 9-10 cm); the rest is in `out/<scenario>/table.md`.
+- TODO (PLAN.md section 14): LQR and MPC as further `LateralController`s; MPC needs its own small QP solver (only Eigen allowed).
 
 ## Planning (planning/)
 - `SlotDetector` (stage 1: the marked slots of the `PriorMap`, kept when the vehicle fits and nothing
@@ -93,8 +114,9 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
   steering travel, max lateral acceleration, estimate RMSE. `meets(metrics, AcceptanceSpec)`; a scenario
   can carry `"acceptance": {"lateral_m", "longitudinal_m", "yaw_deg"}` (S2: 5 cm / 10 cm / 1 deg, S3: 10 / 10 / 2).
 - `sim_main` prints the metrics (and PASS/FAIL) of a closed-loop run. `sim_table SCENARIO.json [--seeds N]
-  [--estimators ekf,dead_reckoning] [--states estimate,truth] [--out DIR]` runs every combination over the
-  seeds and writes `out/<scenario>/table.md` (mean / worst per estimator and state source) and `runs.csv`.
+  [--estimators ekf,dead_reckoning] [--states estimate,truth] [--controllers pure_pursuit,stanley,kanayama]
+  [--out DIR]` runs every combination over the seeds and writes `out/<scenario>/table.md` (mean / worst per
+  controller, estimator and state source) and `runs.csv`.
 - `S3_perpendicular_estimate`: S2 with the controller on the EKF estimate. `S4_perpendicular_degraded`: S3 with
   3 % wheel scale error, 0.01 rad/s gyro bias, 10 % ultrasonic dropouts and a 1.5 s outlier burst at 14 s
   (no acceptance limits: it reports metrics). `S4_lot_drive_by` stays the open-loop checkpoint-2 scenario.

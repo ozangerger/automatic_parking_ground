@@ -71,12 +71,26 @@ struct Group {
   Stat longitudinal;
   Stat yaw;
   Stat cross_track;
+  Stat rms_cross_track;
+  Stat steering_travel;
   Stat time;
   Stat estimate_error;
   double min_clearance{std::numeric_limits<double>::infinity()};
 };
 
 }  // namespace
+
+const char* name_of(ControllerKind kind) {
+  switch (kind) {
+    case ControllerKind::PurePursuit:
+      return "pure_pursuit";
+    case ControllerKind::Stanley:
+      return "stanley";
+    case ControllerKind::Kanayama:
+      return "kanayama";
+  }
+  return "unknown";
+}
 
 const char* name_of(EstimatorKind kind) {
   return kind == EstimatorKind::Ekf ? "ekf" : "dead_reckoning";
@@ -96,31 +110,39 @@ std::vector<RunRecord> run_batch(const Scenario& scenario, const BatchOptions& o
           ? std::vector<StateSource>{scenario.algorithms.controller_state}
           : options.controller_states;
 
+  const std::vector<ControllerKind> controllers =
+      options.controllers.empty() ? std::vector<ControllerKind>{scenario.algorithms.controller}
+                                  : options.controllers;
+
   std::vector<RunRecord> records;
-  for (const EstimatorKind estimator : options.estimators) {
-    for (const StateSource state : states) {
-      for (int i = 0; i < options.seeds; ++i) {
-        Scenario run = scenario;
-        run.seed = options.first_seed + static_cast<std::uint64_t>(i);
-        run.algorithms.estimator = estimator;
-        run.algorithms.controller_state = state;
+  for (const ControllerKind controller : controllers) {
+    for (const EstimatorKind estimator : options.estimators) {
+      for (const StateSource state : states) {
+        for (int i = 0; i < options.seeds; ++i) {
+          Scenario run = scenario;
+          run.seed = options.first_seed + static_cast<std::uint64_t>(i);
+          run.algorithms.controller = controller;
+          run.algorithms.estimator = estimator;
+          run.algorithms.controller_state = state;
 
-        MetricsSink sink{run, run_options.vehicle};
-        RunOptions with_sink = run_options;
-        with_sink.sink = &sink;
-        const RunSummary summary = run_scenario(run, with_sink);
+          MetricsSink sink{run, run_options.vehicle};
+          RunOptions with_sink = run_options;
+          with_sink.sink = &sink;
+          const RunSummary summary = run_scenario(run, with_sink);
 
-        RunRecord record;
-        record.estimator = estimator;
-        record.controller_state = state;
-        record.seed = run.seed;
-        record.metrics = sink.metrics();
-        record.maneuver = summary.final_maneuver;
-        record.plan_status = summary.plan_status;
-        record.passed = scenario.acceptance.has_value() &&
-                        summary.final_maneuver == ManeuverState::Done &&
-                        meets(record.metrics, *scenario.acceptance);
-        records.push_back(record);
+          RunRecord record;
+          record.controller = controller;
+          record.estimator = estimator;
+          record.controller_state = state;
+          record.seed = run.seed;
+          record.metrics = sink.metrics();
+          record.maneuver = summary.final_maneuver;
+          record.plan_status = summary.plan_status;
+          record.passed = scenario.acceptance.has_value() &&
+                          summary.final_maneuver == ManeuverState::Done &&
+                          meets(record.metrics, *scenario.acceptance);
+          records.push_back(record);
+        }
       }
     }
   }
@@ -129,9 +151,11 @@ std::vector<RunRecord> run_batch(const Scenario& scenario, const BatchOptions& o
 
 std::string format_table(const std::vector<RunRecord>& records,
                          const std::optional<AcceptanceSpec>& acceptance) {
-  std::map<std::tuple<int, int>, Group> groups;  // keeps the order: estimator, state
+  // Keeps the order: controller, estimator, state.
+  std::map<std::tuple<int, int, int>, Group> groups;
   for (const RunRecord& r : records) {
-    Group& g = groups[{static_cast<int>(r.estimator), static_cast<int>(r.controller_state)}];
+    Group& g = groups[{static_cast<int>(r.controller), static_cast<int>(r.estimator),
+                       static_cast<int>(r.controller_state)}];
     ++g.runs;
     g.parked += r.maneuver == ManeuverState::Done ? 1U : 0U;
     g.passed += r.passed ? 1U : 0U;
@@ -140,22 +164,25 @@ std::string format_table(const std::vector<RunRecord>& records,
     g.longitudinal.add(r.metrics.final_longitudinal);
     g.yaw.add(r.metrics.final_yaw_error);
     g.cross_track.add(r.metrics.max_cross_track);
+    g.rms_cross_track.add(r.metrics.rms_cross_track);
+    g.steering_travel.add(r.metrics.steering_travel);
     g.time.add(r.metrics.settled_time);
     g.estimate_error.add(r.metrics.estimate_rmse_position);
     g.min_clearance = std::min(g.min_clearance, r.metrics.min_clearance);
   }
 
   std::ostringstream out;
-  out << "| estimator | controller state | runs | parked | "
+  out << "| controller | estimator | controller state | runs | parked | "
       << (acceptance.has_value() ? "pass | " : "")
       << "collisions | lateral (cm) | along slot (cm) | "
-      << "yaw (deg) | max off path (cm) | min clearance (cm) | settled (s) | estimate RMSE (cm) "
-         "|\n";
-  out << "|---|---|---|---|" << (acceptance.has_value() ? "---|" : "")
-      << "---|---|---|---|---|---|---|---|\n";
+      << "yaw (deg) | max off path (cm) | rms off path (cm) | steering travel (rad) | "
+      << "min clearance (cm) | settled (s) | estimate RMSE (cm) |\n";
+  out << "|---|---|---|---|---|" << (acceptance.has_value() ? "---|" : "")
+      << "---|---|---|---|---|---|---|---|---|---|\n";
   for (const auto& [key, g] : groups) {
-    out << "| " << name_of(static_cast<EstimatorKind>(std::get<0>(key))) << " | "
-        << name_of(static_cast<StateSource>(std::get<1>(key))) << " | " << g.runs << " | "
+    out << "| " << name_of(static_cast<ControllerKind>(std::get<0>(key))) << " | "
+        << name_of(static_cast<EstimatorKind>(std::get<1>(key))) << " | "
+        << name_of(static_cast<StateSource>(std::get<2>(key))) << " | " << g.runs << " | "
         << g.parked << "/" << g.runs << " | ";
     if (acceptance.has_value()) {
       out << g.passed << "/" << g.runs << " | ";
@@ -163,10 +190,13 @@ std::string format_table(const std::vector<RunRecord>& records,
     out << g.collisions << " | " << mean_worst(g.lateral, kCentimeters, 1) << " | "
         << mean_worst(g.longitudinal, kCentimeters, 1) << " | " << mean_worst(g.yaw, kRadToDeg, 2)
         << " | " << number(kCentimeters * g.cross_track.worst, 1) << " | "
-        << number(kCentimeters * g.min_clearance, 1) << " | " << number(g.time.mean(), 1) << " | "
+        << number(kCentimeters * g.rms_cross_track.mean(), 1) << " | "
+        << number(g.steering_travel.mean(), 1) << " | " << number(kCentimeters * g.min_clearance, 1)
+        << " | " << number(g.time.mean(), 1) << " | "
         << number(kCentimeters * g.estimate_error.mean(), 1) << " |\n";
   }
-  out << "\nCells with two numbers are mean magnitude / worst over the seeds.";
+  out << "\nCells with two numbers are mean magnitude / worst over the seeds; the rms off path and "
+         "the steering travel are means.";
   if (acceptance.has_value()) {
     out << " Pass: parked (Done), no collision, within "
         << number(kCentimeters * acceptance->lateral, 0) << " cm lateral, "
@@ -181,13 +211,14 @@ std::string format_csv(const std::vector<RunRecord>& records) {
   std::ostringstream out;
   out.imbue(std::locale::classic());
   out << std::setprecision(kCsvPrecision);
-  out << "estimator,controller_state,seed,maneuver,plan,passed,collided,lateral_m,longitudinal_m,"
+  out << "controller,estimator,controller_state,seed,maneuver,plan,passed,collided,lateral_m,"
+         "longitudinal_m,"
          "yaw_error_deg,rms_cross_track_m,max_cross_track_m,min_clearance_m,settled_s,"
          "steering_travel_rad,max_lateral_accel,estimate_rmse_position_m,estimate_rmse_yaw_deg\n";
   for (const RunRecord& r : records) {
     const RunMetrics& m = r.metrics;
-    out << name_of(r.estimator) << ',' << name_of(r.controller_state) << ',' << r.seed << ','
-        << maneuver_text(r.maneuver) << ','
+    out << name_of(r.controller) << ',' << name_of(r.estimator) << ','
+        << name_of(r.controller_state) << ',' << r.seed << ',' << maneuver_text(r.maneuver) << ','
         << (r.plan_status.has_value() ? to_string(*r.plan_status) : "-") << ','
         << (r.passed ? 1 : 0) << ',' << (m.collided ? 1 : 0) << ',' << m.final_lateral << ','
         << m.final_longitudinal << ',' << m.final_yaw_error * kRadToDeg << ',' << m.rms_cross_track

@@ -7,6 +7,7 @@
 #include <string>
 
 #include "parking_checks.hpp"
+#include "psim/app/metrics_table.hpp"
 #include "psim/app/sim_runner.hpp"
 #include "psim/geometry/collision.hpp"
 #include "psim/msgs/math.hpp"
@@ -46,6 +47,31 @@ TEST(ScenarioS2, ParksInTheSlotOnTheTruthWithinTheAcceptanceLimits) {
   EXPECT_LT(std::abs(e.yaw_deg), 1.0);        // measured: 0.2 degrees
   EXPECT_FALSE(collides(scenario, run));
 }
+
+// The two other steering laws park within the same limits on the truth.
+class ScenarioS2Controller : public testing::TestWithParam<ControllerKind> {};
+
+TEST_P(ScenarioS2Controller, ParksWithinTheAcceptanceLimits) {
+  Scenario scenario = load_s2();
+  scenario.algorithms.controller = GetParam();
+  RunSummary summary;
+  const Recording run = run_recorded(scenario, &summary);
+
+  ASSERT_TRUE(summary.final_maneuver.has_value());
+  EXPECT_EQ(*summary.final_maneuver, ManeuverState::Done);
+  const ParkingError e = error_at_the_end(scenario, run);
+  EXPECT_LT(std::abs(e.lateral), 0.05);       // measured: 1 cm
+  EXPECT_LT(std::abs(e.longitudinal), 0.10);  // measured: 2 cm
+  EXPECT_LT(std::abs(e.yaw_deg), 1.0);        // measured: 0.4 degrees
+  EXPECT_FALSE(collides(scenario, run));
+}
+
+INSTANTIATE_TEST_SUITE_P(Controllers, ScenarioS2Controller,
+                         testing::Values(ControllerKind::PurePursuit, ControllerKind::Stanley,
+                                         ControllerKind::Kanayama),
+                         [](const testing::TestParamInfo<ControllerKind>& param) {
+                           return std::string{name_of(param.param)};
+                         });
 
 TEST(ScenarioS2, TheCarKeepsItsDistanceToTheParkedCars) {
   const Scenario scenario = load_s2();

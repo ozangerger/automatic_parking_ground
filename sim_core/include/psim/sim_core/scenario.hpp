@@ -44,6 +44,8 @@ struct NoiseSettings {
 
 enum class EstimatorKind : std::uint8_t { Ekf, DeadReckoning };
 enum class StateSource : std::uint8_t { Estimate, Truth };
+// The steering law of the controller (control/ has the laws; the scenario only names one).
+enum class ControllerKind : std::uint8_t { PurePursuit, Stanley, Kanayama };
 // Where the path comes from in a closed-loop scenario: given in the scenario file ("path"), or
 // planned by the ECU from the prior map, the slot and the start pose.
 enum class PlannerKind : std::uint8_t { None, Perpendicular };
@@ -53,6 +55,7 @@ struct AlgorithmSettings {
   bool uss_updates{true};
   // StateSource::Truth is a debug switch for scenario S2 and is only honored by the app.
   StateSource controller_state{StateSource::Estimate};
+  ControllerKind controller{ControllerKind::PurePursuit};
   // Anything but None needs a slot and excludes both `path` and `open_loop`.
   PlannerKind planner{PlannerKind::None};
 };

@@ -364,6 +364,7 @@ Checkpoint 3 (end of 2.5): S3 parks the car with the final error from section 9.
 - Gear change at standstill needs care in both the actuator model and the FSM; test it first.
 - USS update against a prior map is only informative near obstacles. In open space the estimate is carried by odometry and IMU only; that is expected and worth showing in the plots.
 - Rerun SDK version churn (see section 10).
+- TODO: more steering laws for the controller comparison: LQR (speed-scheduled gains on the linearized error model) and MPC (kinematic bicycle with the actuator delay, lag and rate limit inside the model, horizon 2-3 s; needs a small hand-written QP solver because only Eigen is allowed). Both are further `LateralController` implementations; the scenario field, `sim_table --controllers` and the metrics are in place. Add a stress scenario (model mismatch, higher speed) too: the nominal S2-S4 do not separate the laws.
 - Decide later: add a deliberately wrong prior map (offset obstacle) to test fusion robustness.
 
 ## 15. How to start in Claude Code

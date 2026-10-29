@@ -85,6 +85,18 @@ std::unique_ptr<IEstimator> make_estimator(const Scenario& scenario,
   throw std::invalid_argument("unknown estimator");
 }
 
+LateralKind lateral_kind(ControllerKind kind) {
+  switch (kind) {
+    case ControllerKind::PurePursuit:
+      return LateralKind::PurePursuit;
+    case ControllerKind::Stanley:
+      return LateralKind::Stanley;
+    case ControllerKind::Kanayama:
+      return LateralKind::Kanayama;
+  }
+  throw std::invalid_argument("unknown controller");
+}
+
 // The ECU's controller, matched to the vehicle's published data (wheelbase and steering limit).
 std::unique_ptr<ParkingController> make_controller(const Scenario& scenario,
                                                    const VehicleParams& vehicle) {
@@ -92,6 +104,7 @@ std::unique_ptr<ParkingController> make_controller(const Scenario& scenario,
     return nullptr;
   }
   ControlParams params;
+  params.lateral_kind = lateral_kind(scenario.algorithms.controller);
   params.lateral.wheelbase = vehicle.wheelbase;
   params.lateral.max_steer = vehicle.max_steer;
   params.longitudinal.max_accel = std::min(params.longitudinal.max_accel, vehicle.max_accel);

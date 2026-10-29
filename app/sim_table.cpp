@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -18,11 +19,11 @@ void print_usage() {
   std::cerr
       << "usage: sim_table SCENARIO.json [--seeds N] [--first-seed S]\n"
          "                 [--estimators ekf,dead_reckoning] [--states estimate,truth]\n"
-         "                 [--out DIR]\n"
+         "                 [--controllers pure_pursuit,stanley,kanayama] [--out DIR]\n"
          "  Runs every combination for the seeds first-seed .. first-seed + N - 1 and prints\n"
          "  the metrics table. Writes DIR/table.md and DIR/runs.csv\n"
          "  (default DIR: out/<scenario name>). Defaults: 5 seeds from 1, both estimators,\n"
-         "  the controller state of the scenario.\n";
+         "  the controller state and the controller of the scenario.\n";
 }
 
 std::vector<std::string> split(const std::string& text) {
@@ -74,6 +75,17 @@ int main(int argc, char** argv) {
             print_usage();
             return 2;
           }
+        }
+      } else if (arg == "--controllers" && has_value) {
+        options.controllers.clear();
+        for (const std::string& name :
+             split(argv[++i])) {  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+          const std::optional<psim::ControllerKind> kind = psim::controller_from_name(name);
+          if (!kind.has_value()) {
+            print_usage();
+            return 2;
+          }
+          options.controllers.push_back(kind.value_or(psim::ControllerKind::PurePursuit));
         }
       } else if (arg == "--states" && has_value) {
         options.controller_states.clear();

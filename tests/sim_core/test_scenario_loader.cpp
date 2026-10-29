@@ -21,7 +21,8 @@ constexpr const char* kFullScenario = R"({
     {"vertices": [[5, 5], [6, 5], [5.5, 6]]}
   ],
   "noise": {"enabled": false, "overrides": {"odom_scale_error": 0.03, "uss_dropout": 0.1}},
-  "algorithms": {"estimator": "dead_reckoning", "uss_updates": false, "controller_state": "truth"}
+  "algorithms": {"estimator": "dead_reckoning", "uss_updates": false, "controller_state": "truth",
+                 "controller": "kanayama"}
 })";
 
 constexpr const char* kMinimalScenario = R"({
@@ -73,6 +74,7 @@ TEST(ScenarioLoader, ParsesAllFields) {
   EXPECT_EQ(s.algorithms.estimator, EstimatorKind::DeadReckoning);
   EXPECT_FALSE(s.algorithms.uss_updates);
   EXPECT_EQ(s.algorithms.controller_state, StateSource::Truth);
+  EXPECT_EQ(s.algorithms.controller, ControllerKind::Kanayama);
 }
 
 TEST(ScenarioLoader, AppliesDefaultsForOptionalSections) {
@@ -85,6 +87,7 @@ TEST(ScenarioLoader, AppliesDefaultsForOptionalSections) {
   EXPECT_EQ(s.algorithms.estimator, EstimatorKind::Ekf);
   EXPECT_TRUE(s.algorithms.uss_updates);
   EXPECT_EQ(s.algorithms.controller_state, StateSource::Estimate);
+  EXPECT_EQ(s.algorithms.controller, ControllerKind::PurePursuit);
   EXPECT_EQ(s.duration.count(), 12'000'000'000);
 }
 
@@ -129,6 +132,18 @@ TEST(ScenarioLoader, RejectsInvalidValues) {
                                    "algorithms": {"controller_state": "oracle"}})")
                 .find("controller_state"),
             std::string::npos);
+  EXPECT_NE(error_message(head + R"("duration_s": 1,
+                                   "algorithms": {"controller": "mpc"}})")
+                .find("algorithms.controller"),
+            std::string::npos);
+}
+
+TEST(ScenarioLoader, ControllerNamesRoundTrip) {
+  EXPECT_EQ(controller_from_name("pure_pursuit"), ControllerKind::PurePursuit);
+  EXPECT_EQ(controller_from_name("stanley"), ControllerKind::Stanley);
+  EXPECT_EQ(controller_from_name("kanayama"), ControllerKind::Kanayama);
+  EXPECT_FALSE(controller_from_name("lqr").has_value());
+  EXPECT_FALSE(controller_from_name("").has_value());
 }
 
 TEST(ScenarioLoader, ParsesTheOpenLoopScript) {

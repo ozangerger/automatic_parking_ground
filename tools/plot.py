@@ -2,7 +2,7 @@
 """Plot simulation runs written by CsvSink and write_scene.
 
 Usage:
-    python3 tools/plot.py RUN_DIR [RUN_DIR2] [--label A --label B] [-o OUT.png] [--dark] [--show]
+    python3 tools/plot.py RUN_DIR [RUN_DIR2 [RUN_DIR3]] [--label A --label B] [-o OUT.png] [--dark] [--show]
 
 Each RUN_DIR holds run.csv (one row per tick, columns as documented in csv_sink.hpp) and,
 optionally, scene.json (obstacles, slot, car footprint, planned path). With two run directories of the same
@@ -17,6 +17,12 @@ against time, and NIS against time when run.csv has an `nis` column. When scene.
 path (closed-loop scenarios) three more panels follow: the distance of the truth to the path
 (cross-track error), the steering angle (commanded and actual) and the speed. The controller works
 on its estimate, so two runs of a closed-loop scenario drive different trajectories.
+
+Three runs can be compared in a closed-loop scenario, for example the three steering laws:
+
+    for c in pure_pursuit stanley kanayama; do sim_main scenarios/S3_perpendicular_estimate.json --controller $c; done
+    python3 tools/plot.py out/S3_perpendicular_estimate/ekf out/S3_perpendicular_estimate/ekf_stanley \\
+        out/S3_perpendicular_estimate/ekf_kanayama --label "pure pursuit" --label Stanley --label Kanayama
 
 Conventions match the simulator: SI units, x forward/east, y left/north, yaw counter-clockwise.
 Matplotlib axes already have y pointing up, so world coordinates are plotted unchanged; the one
@@ -37,6 +43,8 @@ import numpy as np
 # Categorical slots 1-3 of the reference palette, validated for light and dark surfaces
 # (scripts/validate_palette.py --pairs all). Aqua is below 3:1 contrast on the light surface, so
 # every series is also told apart by its dash pattern and carries a label (legend and end label).
+# The truth is slot 1 (blue); the estimates of two runs are slots 2 and 3. In a closed-loop
+# comparison of three runs each run has its own truth and slot 1 is the third run's color.
 THEMES = {
     "light": {
         "surface": "#fcfcfb",
@@ -46,7 +54,7 @@ THEMES = {
         "obstacle_fill": "#d6d5d0",
         "obstacle_edge": "#9a9992",
         "truth": "#2a78d6",
-        "estimates": ["#eb6834", "#1baf7a"],
+        "estimates": ["#eb6834", "#1baf7a", "#2a78d6"],
     },
     "dark": {
         "surface": "#1a1a19",
@@ -56,12 +64,12 @@ THEMES = {
         "obstacle_fill": "#3a3936",
         "obstacle_edge": "#6e6d67",
         "truth": "#3987e5",
-        "estimates": ["#d95926", "#199e70"],
+        "estimates": ["#d95926", "#199e70", "#3987e5"],
     },
 }
 
 # Dash patterns of the estimate lines, in the order of the run directories.
-ESTIMATE_DASHES = [(0, (5, 2)), (0, (1, 1.5, 4, 1.5))]
+ESTIMATE_DASHES = [(0, (5, 2)), (0, (1, 1.5, 4, 1.5)), (0, (3, 1.5, 1, 1.5, 1, 1.5))]
 
 LINE_WIDTH = 1.8
 MARKER_SIZE = 8
@@ -164,7 +172,8 @@ def draw_trajectory(ax, runs, scene, theme):
             ax.plot(data["est_x"], data["est_y"], color=color, linewidth=1.0,
                     linestyle=ESTIMATE_DASHES[index], label=f"{run['label']} estimate", zorder=5 + index)
             mark_pose(-1, "end" if index == 0 else "", data, color)
-        mark_pose(0, "start", runs[0]["data"], theme["truth"])
+        # With three runs the blue is a run's color: the start is marked in neutral ink.
+        mark_pose(0, "start", runs[0]["data"], theme["ink"] if len(runs) > 2 else theme["truth"])
     else:
         truth = runs[0]["data"]
         ax.plot(truth["truth_x"], truth["truth_y"], color=theme["truth"], linewidth=LINE_WIDTH,
@@ -365,7 +374,7 @@ def make_figure(runs, scene, theme, title):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("run_dirs", type=Path, nargs="+", help="one or two directories with run.csv")
+    parser.add_argument("run_dirs", type=Path, nargs="+", help="one to three directories with run.csv")
     parser.add_argument("--label", action="append", default=[], help="legend label of a run (repeatable)")
     parser.add_argument("-o", "--out", type=Path, help="output image (default: first RUN_DIR/plot.png)")
     parser.add_argument("--dark", action="store_true", help="dark theme")
@@ -393,6 +402,9 @@ def main():
         runs.append({"label": label, "data": data})
 
     scene = load_scene(args.run_dirs[0] / "scene.json")
+    if len(runs) > 2 and not scene.get("path"):
+        sys.exit("three runs can only be compared in a closed-loop scenario (each run has its own "
+                 "truth; in an open-loop plot the blue is the shared truth)")
     if len(runs) == 2 and not scene.get("path"):  # closed loop: the truth differs by design
         a, b = runs[0]["data"], runs[1]["data"]
         if len(a["t_s"]) != len(b["t_s"]) or np.max(np.abs(a["truth_x"] - b["truth_x"])) > 1e-6:

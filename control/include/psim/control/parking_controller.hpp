@@ -1,19 +1,27 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
+#include "psim/control/kanayama_controller.hpp"
 #include "psim/control/lateral_controller.hpp"
 #include "psim/control/longitudinal_controller.hpp"
 #include "psim/control/maneuver_fsm.hpp"
 #include "psim/control/path_cursor.hpp"
+#include "psim/control/pure_pursuit_controller.hpp"
+#include "psim/control/stanley_controller.hpp"
 #include "psim/msgs/interfaces.hpp"
 
 namespace psim {
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers): this table is where the numbers get names.
 struct ControlParams {
-  LateralParams lateral;
+  LateralKind lateral_kind{LateralKind::PurePursuit};
+  LateralParams lateral;  // the vehicle and the steering actuator: shared by all laws
+  PurePursuitParams pure_pursuit;
+  StanleyParams stanley;
+  KanayamaParams kanayama;
   LongitudinalParams longitudinal;
   ManeuverParams maneuver;
 
@@ -29,8 +37,9 @@ struct ControlParams {
 };
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
 
-// The ECU's controller for a parking maneuver: follows a path with pure pursuit and a PI speed
-// controller, one segment at a time, under the maneuver state machine. It works on the estimate it
+// The ECU's controller for a parking maneuver: follows a path with the chosen steering law (pure
+// pursuit, Stanley or Kanayama) and a PI speed controller, one segment at a time, under the
+// maneuver state machine. It works on the estimate it
 // is given and knows nothing else: feeding it the truth instead (scenario S2) is the caller's
 // decision, and impossible to do from in here.
 class ParkingController final : public IController {
@@ -54,7 +63,7 @@ class ParkingController final : public IController {
 
   ControlParams params_;
   PathCursor cursor_;
-  LateralController lateral_;
+  std::unique_ptr<LateralController> lateral_;
   LongitudinalController longitudinal_;
   ManeuverFsm fsm_;
 

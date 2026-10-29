@@ -215,6 +215,37 @@ TEST(Batch, RunsEveryCombinationOfEstimatorStateAndSeed) {
   }
 }
 
+TEST(Batch, RunsEveryControllerInTheOrderGiven) {
+  BatchOptions options;
+  options.seeds = 1;
+  options.estimators = {EstimatorKind::Ekf};
+  options.controllers = {ControllerKind::Kanayama, ControllerKind::PurePursuit,
+                         ControllerKind::Stanley};
+  const std::vector<RunRecord> records = run_batch(quiet_parking(), options);
+  ASSERT_EQ(records.size(), 3U);
+  EXPECT_EQ(records[0].controller, ControllerKind::Kanayama);
+  EXPECT_EQ(records[1].controller, ControllerKind::PurePursuit);
+  EXPECT_EQ(records[2].controller, ControllerKind::Stanley);
+  for (const RunRecord& r : records) {
+    EXPECT_EQ(r.maneuver, ManeuverState::Done) << name_of(r.controller);
+    EXPECT_TRUE(r.passed) << name_of(r.controller);
+  }
+  // Different laws drive different trajectories.
+  EXPECT_NE(records[0].metrics.rms_cross_track, records[1].metrics.rms_cross_track);
+  EXPECT_NE(records[1].metrics.rms_cross_track, records[2].metrics.rms_cross_track);
+}
+
+TEST(Batch, UsesTheScenariosOwnControllerByDefault) {
+  Scenario scenario = quiet_parking();
+  scenario.algorithms.controller = ControllerKind::Stanley;
+  BatchOptions options;
+  options.seeds = 1;
+  options.estimators = {EstimatorKind::Ekf};
+  const std::vector<RunRecord> records = run_batch(scenario, options);
+  ASSERT_EQ(records.size(), 1U);
+  EXPECT_EQ(records[0].controller, ControllerKind::Stanley);
+}
+
 TEST(Batch, UsesTheScenariosOwnStateSourceByDefault) {
   Scenario scenario = quiet_parking();
   scenario.algorithms.controller_state = StateSource::Truth;
@@ -265,10 +296,32 @@ TEST(Table, HasOneRowPerEstimatorAndStateWithCountsAndAPassColumn) {
   const std::vector<RunRecord> records = run_batch(scenario, options);
   const std::string table = format_table(records, scenario.acceptance);
   EXPECT_NE(table.find("| pass |"), std::string::npos);
-  EXPECT_NE(table.find("| ekf | estimate | 2 | 2/2 | 2/2 | 0 |"), std::string::npos) << table;
-  EXPECT_NE(table.find("| dead_reckoning | estimate | 2 | 2/2 | 2/2 | 0 |"), std::string::npos)
+  EXPECT_NE(table.find("| pure_pursuit | ekf | estimate | 2 | 2/2 | 2/2 | 0 |"), std::string::npos)
+      << table;
+  EXPECT_NE(table.find("| pure_pursuit | dead_reckoning | estimate | 2 | 2/2 | 2/2 | 0 |"),
+            std::string::npos)
       << table;
   EXPECT_NE(table.find("within 10 cm lateral"), std::string::npos);
+}
+
+TEST(Table, HasARowForEveryControllerAndNamesItInTheCsv) {
+  BatchOptions options;
+  options.seeds = 1;
+  options.estimators = {EstimatorKind::Ekf};
+  options.controllers = {ControllerKind::PurePursuit, ControllerKind::Stanley,
+                         ControllerKind::Kanayama};
+  const Scenario scenario = quiet_parking();
+  const std::vector<RunRecord> records = run_batch(scenario, options);
+  const std::string table = format_table(records, scenario.acceptance);
+  for (const char* name : {"pure_pursuit", "stanley", "kanayama"}) {
+    EXPECT_NE(table.find(std::string{"| "} + name + " | ekf | estimate | 1 | 1/1 | 1/1 | 0 |"),
+              std::string::npos)
+        << table;
+  }
+  EXPECT_NE(table.find("steering travel (rad)"), std::string::npos);
+  const std::string csv = format_csv(records);
+  EXPECT_NE(csv.find("\nstanley,ekf,estimate,1,Done,Ok,1,0,"), std::string::npos) << csv;
+  EXPECT_NE(csv.find("\nkanayama,ekf,estimate,1,Done,Ok,1,0,"), std::string::npos) << csv;
 }
 
 TEST(Table, WithoutAcceptanceLimitsThereIsNoPassColumn) {
@@ -279,7 +332,8 @@ TEST(Table, WithoutAcceptanceLimitsThereIsNoPassColumn) {
   scenario.acceptance.reset();
   const std::string table = format_table(run_batch(scenario, options), scenario.acceptance);
   EXPECT_EQ(table.find("| pass |"), std::string::npos);
-  EXPECT_NE(table.find("| ekf | estimate | 1 | 1/1 | 0 |"), std::string::npos) << table;
+  EXPECT_NE(table.find("| pure_pursuit | ekf | estimate | 1 | 1/1 | 0 |"), std::string::npos)
+      << table;
 }
 
 TEST(Table, CsvHasAHeaderAndOneLinePerRun) {
@@ -292,8 +346,8 @@ TEST(Table, CsvHasAHeaderAndOneLinePerRun) {
     lines += c == '\n' ? 1U : 0U;
   }
   EXPECT_EQ(lines, 4U);
-  EXPECT_EQ(csv.rfind("estimator,controller_state,seed,maneuver", 0), 0U);
-  EXPECT_NE(csv.find("ekf,estimate,1,Done,Ok,1,0,"), std::string::npos) << csv;
+  EXPECT_EQ(csv.rfind("controller,estimator,controller_state,seed,maneuver", 0), 0U);
+  EXPECT_NE(csv.find("pure_pursuit,ekf,estimate,1,Done,Ok,1,0,"), std::string::npos) << csv;
 }
 
 }  // namespace

@@ -67,6 +67,45 @@ TEST(ParkingSeeds, S3OnTheEkfEstimateMeetsTheAcceptanceLimitsInEverySeed) {
   }
 }
 
+TEST(ParkingSeeds, S3OnTheEkfEstimateEveryControllerMeetsTheLimitsInEverySeed) {
+  const Scenario scenario = load("S3_perpendicular_estimate.json");
+  for (const ControllerKind controller :
+       {ControllerKind::Stanley, ControllerKind::Kanayama}) {  // pure pursuit: the test above
+    BatchOptions options;
+    options.seeds = kSeeds;
+    options.estimators = {EstimatorKind::Ekf};
+    options.controllers = {controller};
+    const std::vector<RunRecord> records = run_batch(scenario, options);
+    EXPECT_EQ(count_if(records, EstimatorKind::Ekf, passed), records.size()) << name_of(controller);
+    EXPECT_EQ(count_if(records, EstimatorKind::Ekf, collided), 0U) << name_of(controller);
+    for (const RunRecord& r : records) {
+      EXPECT_LT(r.metrics.max_cross_track, 0.15) << name_of(controller) << " seed " << r.seed;
+      EXPECT_GT(r.metrics.min_clearance, 0.15) << name_of(controller) << " seed " << r.seed;
+    }
+  }
+}
+
+TEST(ParkingSeeds, S4WithDegradedSensorsEveryControllerStillParksOnTheEkfAndNeverTouchesAnything) {
+  const Scenario scenario = load("S4_perpendicular_degraded.json");
+  const AcceptanceSpec limits{0.10, 0.10, 2.0};
+  for (const ControllerKind controller : {ControllerKind::Stanley, ControllerKind::Kanayama}) {
+    BatchOptions options;
+    options.seeds = kSeeds;
+    options.estimators = {EstimatorKind::Ekf, EstimatorKind::DeadReckoning};
+    options.controllers = {controller};
+    const std::vector<RunRecord> records = run_batch(scenario, options);
+    EXPECT_EQ(count_if(records, EstimatorKind::Ekf, parked), static_cast<std::size_t>(kSeeds))
+        << name_of(controller);
+    EXPECT_EQ(count_if(records, EstimatorKind::Ekf, collided), 0U) << name_of(controller);
+    EXPECT_EQ(count_if(records, EstimatorKind::DeadReckoning, collided), 0U) << name_of(controller);
+    for (const RunRecord& r : records) {
+      if (r.estimator == EstimatorKind::Ekf) {
+        EXPECT_TRUE(meets(r.metrics, limits)) << name_of(controller) << " seed " << r.seed;
+      }
+    }
+  }
+}
+
 TEST(ParkingSeeds, S3WithoutFusionParksWorseThanWithIt) {
   const std::vector<RunRecord> records = batch(load("S3_perpendicular_estimate.json"),
                                                {EstimatorKind::Ekf, EstimatorKind::DeadReckoning});

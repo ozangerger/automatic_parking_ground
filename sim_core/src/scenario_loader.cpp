@@ -172,6 +172,15 @@ StateSource parse_state_source(const std::string& text) {
   fail("'algorithms.controller_state' must be \"estimate\" or \"truth\", got \"" + text + "\"");
 }
 
+ControllerKind parse_controller(const std::string& text) {
+  const std::optional<ControllerKind> kind = controller_from_name(text);
+  if (!kind.has_value()) {
+    fail("'algorithms.controller' must be \"pure_pursuit\", \"stanley\" or \"kanayama\", got \"" +
+         text + "\"");
+  }
+  return kind.value_or(ControllerKind::PurePursuit);
+}
+
 PlannerKind parse_planner(const std::string& text) {
   if (text == "none") {
     return PlannerKind::None;
@@ -246,6 +255,8 @@ Scenario parse_document(const Json& doc) {
     scenario.algorithms.controller_state =
         parse_state_source(algorithms.value("controller_state", "estimate"));
     scenario.algorithms.planner = parse_planner(algorithms.value("planner", "none"));
+    scenario.algorithms.controller =
+        parse_controller(algorithms.value("controller", "pure_pursuit"));
   }
   if (scenario.algorithms.planner != PlannerKind::None) {
     if (!scenario.slot.has_value()) {
@@ -261,6 +272,19 @@ Scenario parse_document(const Json& doc) {
 }
 
 }  // namespace
+
+std::optional<ControllerKind> controller_from_name(std::string_view name) {
+  if (name == "pure_pursuit") {
+    return ControllerKind::PurePursuit;
+  }
+  if (name == "stanley") {
+    return ControllerKind::Stanley;
+  }
+  if (name == "kanayama") {
+    return ControllerKind::Kanayama;
+  }
+  return std::nullopt;
+}
 
 Scenario parse_scenario(std::string_view json_text) {
   try {

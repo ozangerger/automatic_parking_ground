@@ -25,6 +25,14 @@ add_test(NAME app.sim_main_runs_s0_with_each_estimator
 add_test(NAME app.sim_main_rejects_an_unknown_estimator
          COMMAND sim_main ${CMAKE_SOURCE_DIR}/scenarios/S0_straight.json --estimator magic)
 set_tests_properties(app.sim_main_rejects_an_unknown_estimator PROPERTIES WILL_FAIL TRUE)
+add_test(NAME app.sim_main_runs_s2_with_each_controller
+         COMMAND ${CMAKE_COMMAND} -DSIM_MAIN=$<TARGET_FILE:sim_main>
+                 -DSCENARIO=${CMAKE_SOURCE_DIR}/scenarios/S2_perpendicular_truth.json
+                 -DOUT=${CMAKE_BINARY_DIR}/smoke
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/run_each_controller.cmake)
+add_test(NAME app.sim_main_rejects_an_unknown_controller
+         COMMAND sim_main ${CMAKE_SOURCE_DIR}/scenarios/S0_straight.json --controller mpc)
+set_tests_properties(app.sim_main_rejects_an_unknown_controller PROPERTIES WILL_FAIL TRUE)
 add_test(NAME app.sim_main_rejects_missing_scenario
          COMMAND sim_main ${CMAKE_SOURCE_DIR}/scenarios/does_not_exist.json)
 set_tests_properties(app.sim_main_rejects_missing_scenario PROPERTIES WILL_FAIL TRUE)
@@ -39,5 +47,13 @@ add_test(NAME app.sim_table_rejects_an_unknown_estimator
          COMMAND sim_table ${CMAKE_SOURCE_DIR}/scenarios/S3_perpendicular_estimate.json
                  --estimators magic)
 set_tests_properties(app.sim_table_rejects_an_unknown_estimator PROPERTIES WILL_FAIL TRUE)
+add_test(NAME app.sim_table_compares_the_controllers
+         COMMAND sim_table ${CMAKE_SOURCE_DIR}/scenarios/S2_perpendicular_truth.json
+                 --seeds 1 --estimators ekf --controllers pure_pursuit,stanley,kanayama
+                 --out ${CMAKE_BINARY_DIR}/smoke/S2_controllers)
+add_test(NAME app.sim_table_rejects_an_unknown_controller
+         COMMAND sim_table ${CMAKE_SOURCE_DIR}/scenarios/S3_perpendicular_estimate.json
+                 --controllers mpc)
+set_tests_properties(app.sim_table_rejects_an_unknown_controller PROPERTIES WILL_FAIL TRUE)
 add_test(NAME app.sim_table_prints_usage_without_arguments COMMAND sim_table)
 set_tests_properties(app.sim_table_prints_usage_without_arguments PROPERTIES WILL_FAIL TRUE)

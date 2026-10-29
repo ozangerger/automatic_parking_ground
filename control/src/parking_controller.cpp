@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "psim/control/lateral_factory.hpp"
+
 namespace psim {
 
 namespace {
@@ -16,7 +18,7 @@ bool same_point(const PathPoint& a, const PathPoint& b) {
 
 ParkingController::ParkingController(const ControlParams& params)
     : params_{params},
-      lateral_{params.lateral},
+      lateral_{make_lateral_controller(params)},
       longitudinal_{params.longitudinal},
       fsm_{params.maneuver} {}
 
@@ -89,13 +91,13 @@ VehicleCmd ParkingController::compute(SimTime now, const EstimatedState& estimat
   if (new_path) {
     cursor_.reset(path);
     echo_tracks_.clear();  // a new maneuver judges the obstacles by its own messages
-    lateral_.reset();
+    lateral_->reset();
     longitudinal_.reset();
   }
 
   VehicleCmd cmd;
   cmd.stamp = now;
-  cmd.steer_angle = lateral_.last_steer();
+  cmd.steer_angle = lateral_->last_steer();
   if (cursor_.empty()) {
     ManeuverInput idle;
     idle.now = now;
@@ -136,7 +138,7 @@ VehicleCmd ParkingController::compute(SimTime now, const EstimatedState& estimat
     // The lookahead is sized for the speed the vehicle is about to drive as well as the one it has:
     // starting from rest, a short lookahead would make the first correction swing across the path.
     const double lookahead_speed = std::max(std::abs(v), cursor_.nearest().speed);
-    cmd.steer_angle = lateral_.steer(cursor_, x, y, yaw, lookahead_speed, now);
+    cmd.steer_angle = lateral_->steer(cursor_, x, y, yaw, lookahead_speed, now);
   }
   if (out.drive) {
     cmd.accel = longitudinal_.accel(std::max(travel_speed, 0.0), cursor_.nearest().speed,

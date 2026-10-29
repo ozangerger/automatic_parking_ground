@@ -1,124 +1,260 @@
+// What every steering law has to do, run for each of them: the limits of the base class and the
+// closed-loop behaviour on lines and curves, forward and in reverse, with the real vehicle model.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 #include "closed_loop.hpp"
-#include "psim/control/lateral_controller.hpp"
+#include "psim/control/lateral_factory.hpp"
 
 namespace psim {
 namespace {
 
-constexpr double kL = 2.7;
+constexpr double kPiOver2 = kPi / 2.0;
+constexpr double kWheelAngleLimit = 0.55;
+constexpr double kRateLimit = 0.5;
+constexpr double kDegrees = kPi / 180.0;
 
 SimTime at(double seconds) { return from_seconds(seconds); }
 
-TEST(PurePursuit, HandComputedSteeringAngles) {
-  // Target 2 m ahead, 0.5 m to the left: curvature 2 * 0.5 / (4 + 0.25) = 0.2353, so
-  // tan(delta) = 2.7 * 0.2353.
-  EXPECT_NEAR(pure_pursuit_steer(kL, 2.0, 0.5), std::atan(kL * 1.0 / 4.25), 1e-12);
-  EXPECT_NEAR(pure_pursuit_steer(kL, 2.0, 0.5), 0.5660, 1e-4);
-  EXPECT_NEAR(pure_pursuit_steer(kL, 3.0, 0.0), 0.0, 1e-12);      // straight ahead
-  EXPECT_NEAR(pure_pursuit_steer(kL, 2.0, -0.5), -0.5660, 1e-4);  // to the right: steer right
+Path path_of(const std::vector<PathSegmentSpec>& segments, const Pose2D& start = Pose2D{}) {
+  return build_path(start, segments, 0.1);
 }
 
-TEST(PurePursuit, TheSameFormulaServesForwardAndReverse) {
-  // The same target mirrored behind the vehicle: the circle through the rear axle is the same.
-  EXPECT_NEAR(pure_pursuit_steer(kL, -2.0, 0.5), pure_pursuit_steer(kL, 2.0, 0.5), 1e-12);
-  EXPECT_NEAR(pure_pursuit_steer(kL, -3.0, -1.0), pure_pursuit_steer(kL, 3.0, -1.0), 1e-12);
+class LateralLaw : public testing::TestWithParam<LateralKind> {
+ protected:
+  [[nodiscard]] ControlParams params() const {
+    ControlParams p;
+    p.lateral_kind = GetParam();
+    return p;
+  }
+  [[nodiscard]] std::unique_ptr<LateralController> controller(
+      const LateralParams& lateral = {}) const {
+    ControlParams p = params();
+    p.lateral = lateral;
+    return make_lateral_controller(p);
+  }
+};
+
+std::string law_name(const testing::TestParamInfo<LateralKind>& info) {
+  return to_string(info.param);
 }
 
-TEST(PurePursuit, TheBicycleModelWithThatSteeringPassesThroughTheTarget) {
-  // The rear axle circle for steering delta has curvature tan(delta) / L and its center on the y
-  // axis.
-  for (const auto& [x, y] :
-       {std::pair{2.0, 0.5}, std::pair{3.0, -1.2}, std::pair{-2.0, 0.8}, std::pair{-1.5, -0.4}}) {
-    const double delta = pure_pursuit_steer(kL, x, y);
-    const double radius = kL / std::tan(delta);
-    EXPECT_NEAR(std::hypot(x, y - radius), std::abs(radius), 1e-9) << x << ", " << y;
+INSTANTIATE_TEST_SUITE_P(Laws, LateralLaw,
+                         testing::Values(LateralKind::PurePursuit, LateralKind::Stanley,
+                                         LateralKind::Kanayama),
+                         law_name);
+
+// ---- the shared limits and signs
+// -----------------------------------------------------------------
+
+TEST_P(LateralLaw, SteersBackTowardsThePathForwardAndInReverse) {
+  for (const Direction direction : {Direction::Forward, Direction::Reverse}) {
+    const double sign = direction == Direction::Forward ? 1.0 : -1.0;
+    PathCursor cursor;
+    cursor.reset(path_of({line_segment(20.0, direction)}));
+    const double speed = direction == Direction::Forward ? 1.0 : 0.6;
+    const double x = 5.0 * sign;
+
+    cursor.update(x, 0.6);  // 0.6 m left of the line, heading along it
+    EXPECT_LT(controller()->steer(cursor, x, 0.6, 0.0, speed, at(1.0)), 0.0)
+        << "wants to go right, " << (sign > 0 ? "forward" : "in reverse");
+    cursor.update(x, -0.6);
+    EXPECT_GT(controller()->steer(cursor, x, -0.6, 0.0, speed, at(1.0)), 0.0)
+        << "wants to go left, " << (sign > 0 ? "forward" : "in reverse");
   }
 }
 
-TEST(LateralController, SteersBackTowardsThePath) {
-  PathCursor cursor;
-  cursor.reset(build_path(Pose2D{}, {line_segment(20.0)}, 0.5));
-  LateralController lateral;
-
-  cursor.update(5.0, 0.6);  // 0.6 m left of the line, heading along it
-  EXPECT_LT(lateral.steer(cursor, 5.0, 0.6, 0.0, 1.0, at(1.0)), 0.0);  // wants to go right
-
-  LateralController other;
-  cursor.update(5.5, -0.6);
-  EXPECT_GT(other.steer(cursor, 5.5, -0.6, 0.0, 1.0, at(1.0)), 0.0);  // wants to go left
+TEST_P(LateralLaw, TurnsTheWayOfTheCurvatureOfThePath) {
+  for (const Direction direction : {Direction::Forward, Direction::Reverse}) {
+    for (const bool left : {true, false}) {
+      PathCursor cursor;
+      cursor.reset(path_of({arc_segment(6.0, kPi, left, direction)}));
+      cursor.update(0.0, 0.0);
+      LateralParams lateral;
+      lateral.steer_rate_limit = 100.0;  // the raw command, not the first 20 ms of a ramp
+      const double steer = controller(lateral)->steer(cursor, 0.0, 0.0, 0.0, 0.6, at(1.0));
+      EXPECT_EQ(steer > 0.0, left) << (left ? "left" : "right") << " arc, "
+                                   << (direction == Direction::Forward ? "forward" : "reverse");
+      EXPECT_GT(std::abs(steer), 0.1);
+    }
+  }
 }
 
-TEST(LateralController, IsLimitedToTheWheelAngle) {
+TEST_P(LateralLaw, IsLimitedToTheWheelAngle) {
   PathCursor cursor;
-  cursor.reset(build_path(Pose2D{}, {line_segment(20.0)}, 0.5));
-  LateralParams params;
-  params.steer_rate_limit = 100.0;  // so only the angle limit acts
-  LateralController lateral{params};
-  cursor.update(5.0, 5.0);  // far off
-  EXPECT_NEAR(lateral.steer(cursor, 5.0, 5.0, 0.0, 1.0, at(1.0)), -0.55, 1e-12);
+  cursor.reset(path_of({line_segment(20.0)}));
+  LateralParams lateral;
+  lateral.steer_rate_limit = 100.0;  // so only the angle limit acts
+  cursor.update(5.0, 5.0);           // far off
+  EXPECT_NEAR(controller(lateral)->steer(cursor, 5.0, 5.0, 0.0, 1.0, at(1.0)), -kWheelAngleLimit,
+              1e-12);
 }
 
-TEST(LateralController, FollowsTheRateLimitOfTheSteeringActuator) {
+TEST_P(LateralLaw, FollowsTheRateLimitOfTheSteeringActuator) {
   PathCursor cursor;
-  cursor.reset(build_path(Pose2D{}, {line_segment(20.0)}, 0.5));
-  LateralController lateral;
+  cursor.reset(path_of({line_segment(20.0)}));
+  const std::unique_ptr<LateralController> lateral = controller();
   cursor.update(5.0, 2.0);
   double previous =
-      lateral.steer(cursor, 5.0, 2.0, 0.0, 1.0, at(1.00));  // the first call has no dt
+      lateral->steer(cursor, 5.0, 2.0, 0.0, 1.0, at(1.00));  // the first call has no dt
   for (int i = 1; i <= 50; ++i) {
-    const double steer = lateral.steer(cursor, 5.0, 2.0, 0.0, 1.0, at(1.0 + 0.02 * i));
-    EXPECT_LE(std::abs(steer - previous), 0.5 * 0.02 + 1e-12) << "step " << i;
+    const double steer = lateral->steer(cursor, 5.0, 2.0, 0.0, 1.0, at(1.0 + 0.02 * i));
+    EXPECT_LE(std::abs(steer - previous), kRateLimit * 0.02 + 1e-12) << "step " << i;
     previous = steer;
   }
   EXPECT_LT(previous, -0.3);  // and it did get there: 1 s at 0.5 rad/s
+  EXPECT_EQ(lateral->last_steer(), previous);
 }
 
-TEST(LateralController, HoldsTheSteeringOverTheLastStretch) {
+TEST_P(LateralLaw, HoldsTheSteeringOverTheLastStretch) {
   PathCursor cursor;
-  cursor.reset(build_path(Pose2D{}, {line_segment(10.0)}, 0.5));
-  LateralController lateral;
+  cursor.reset(path_of({line_segment(10.0)}));
+  const std::unique_ptr<LateralController> lateral = controller();
   cursor.update(5.0, 0.3);
-  const double steer = lateral.steer(cursor, 5.0, 0.3, 0.0, 1.0, at(1.0));
+  const double steer = lateral->steer(cursor, 5.0, 0.3, 0.0, 1.0, at(1.0));
   ASSERT_NE(steer, 0.0);
 
   cursor.update(9.8, -0.4);  // 0.2 m from the end: inside the freeze distance
-  EXPECT_NEAR(lateral.steer(cursor, 9.8, -0.4, 0.0, 0.1, at(2.0)), steer, 1e-12);
+  EXPECT_NEAR(lateral->steer(cursor, 9.8, -0.4, 0.0, 0.1, at(2.0)), steer, 1e-12);
 }
 
-TEST(LateralController, LookaheadGrowsWithSpeedWithinLimits) {
-  // A vehicle 0.1 m beside a straight path: the steering to the target is smaller the farther the
-  // target. With the defaults the lookahead is 1 m at rest, 4 m from 2 m/s on.
+TEST_P(LateralLaw, ResetForgetsThePreviousCommand) {
   PathCursor cursor;
-  cursor.reset(build_path(Pose2D{}, {line_segment(30.0)}, 0.1));
-  cursor.update(0.0, 0.0);
-  LateralParams params;
-  params.steer_rate_limit = 100.0;  // compare the raw pure pursuit angles
-  const auto steer_at = [&](double speed) {
-    LateralController lateral{params};
-    return lateral.steer(cursor, 0.0, 0.1, 0.0, speed, at(1.0));
-  };
-  const double rest = steer_at(0.0);
-  const double medium = steer_at(1.0);
-  const double fast = steer_at(2.0);
-  const double very_fast = steer_at(10.0);
-  EXPECT_NEAR(rest, pure_pursuit_steer(kL, 1.0, -0.1), 1e-9);       // 1 m lookahead: the minimum
-  EXPECT_NEAR(medium, pure_pursuit_steer(kL, 2.0, -0.1), 1e-9);     // 2 s * 1 m/s
-  EXPECT_NEAR(fast, pure_pursuit_steer(kL, 4.0, -0.1), 1e-9);       // 4 m: at the cap
-  EXPECT_NEAR(very_fast, pure_pursuit_steer(kL, 4.0, -0.1), 1e-9);  // capped at 4 m
-  EXPECT_LT(std::abs(medium), std::abs(rest));
+  cursor.reset(path_of({line_segment(20.0)}));
+  const std::unique_ptr<LateralController> lateral = controller();
+  cursor.update(5.0, 2.0);
+  for (int i = 0; i < 50; ++i) {
+    (void)lateral->steer(cursor, 5.0, 2.0, 0.0, 1.0, at(1.0 + 0.02 * i));
+  }
+  ASSERT_LT(lateral->last_steer(), -0.3);
+  lateral->reset();
+  EXPECT_EQ(lateral->last_steer(), 0.0);
 }
 
-TEST(LateralController, RejectsInvalidParameters) {
+TEST_P(LateralLaw, RejectsInvalidVehicleParameters) {
   LateralParams bad;
-  bad.lookahead_max = 0.5;  // below the minimum
-  EXPECT_THROW(LateralController{bad}, std::invalid_argument);
-  bad = LateralParams{};
   bad.wheelbase = 0.0;
-  EXPECT_THROW(LateralController{bad}, std::invalid_argument);
+  EXPECT_THROW((void)controller(bad), std::invalid_argument);
+  bad = LateralParams{};
+  bad.steer_rate_limit = -1.0;
+  EXPECT_THROW((void)controller(bad), std::invalid_argument);
+}
+
+// ---- closed loop with the vehicle model
+// ------------------------------------------------------------
+
+struct Drive {
+  std::vector<Sample> samples;
+  Path path;
+};
+
+class LateralLawClosedLoop : public LateralLaw {
+ protected:
+  // Drives the path to the end of the maneuver (and a second longer).
+  [[nodiscard]] Drive drive(const Pose2D& start, const Path& path, double limit_s = 80.0) const {
+    ClosedLoop sim{start, path, params()};
+    EXPECT_TRUE(
+        sim.run_until([](const Sample& s) { return s.state == ManeuverState::Done; }, limit_s));
+    sim.run(1.0);
+    return Drive{sim.samples(), path};
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(Laws, LateralLawClosedLoop,
+                         testing::Values(LateralKind::PurePursuit, LateralKind::Stanley,
+                                         LateralKind::Kanayama),
+                         law_name);
+
+double worst_cross_track(const std::vector<Sample>& samples, double from_t = 0.0) {
+  double worst = 0.0;
+  for (const Sample& s : samples) {
+    if (s.t >= from_t) {
+      worst = std::max(worst, s.cross_track);
+    }
+  }
+  return worst;
+}
+
+TEST_P(LateralLawClosedLoop, ConvergesOntoAForwardLineAndStopsAtItsEnd) {
+  const Drive run =
+      drive(Pose2D{0.0, 0.5, 0.1}, path_of({line_segment(15.0)}));  // 0.5 m, 6 deg off
+  for (const Sample& s : run.samples) {
+    if (s.pose.x > 10.0 && s.pose.x < 15.0) {
+      EXPECT_LT(s.cross_track, 0.03) << "x = " << s.pose.x;
+    }
+  }
+  EXPECT_NEAR(run.samples.back().pose.x, 15.0, 0.05);
+  EXPECT_LT(std::abs(run.samples.back().pose.yaw), 1.0 * kDegrees);
+}
+
+TEST_P(LateralLawClosedLoop, ConvergesOntoAReverseLineAndNeverRollsForward) {
+  const Drive run =
+      drive(Pose2D{0.0, 0.4, 0.08}, path_of({line_segment(10.0, Direction::Reverse, 0.6)}));
+  for (const Sample& s : run.samples) {
+    EXPECT_LE(s.v, 1e-9) << "t = " << s.t;
+    if (s.pose.x < -6.0) {
+      EXPECT_LT(s.cross_track, 0.05) << "x = " << s.pose.x;
+    }
+  }
+  EXPECT_NEAR(run.samples.back().pose.x, -10.0, 0.05);
+  EXPECT_LT(std::abs(run.samples.back().pose.yaw), 1.0 * kDegrees);
+}
+
+TEST_P(LateralLawClosedLoop, TracksAForwardCircleWithABoundedError) {
+  const Drive run = drive(Pose2D{}, path_of({arc_segment(6.0, kPi, true)}));
+  EXPECT_LT(worst_cross_track(run.samples), 0.15);
+  EXPECT_NEAR(run.samples.back().pose.x, run.path.points.back().x, 0.15);
+  EXPECT_NEAR(run.samples.back().pose.y, run.path.points.back().y, 0.15);
+  for (const Sample& s : run.samples) {
+    EXPECT_LE(std::abs(s.steer), kWheelAngleLimit + 1e-9);
+  }
+}
+
+TEST_P(LateralLawClosedLoop, TracksAReverseCurveWithABoundedError) {
+  const Drive run =
+      drive(Pose2D{}, path_of({arc_segment(5.0, kPiOver2, false, Direction::Reverse, 0.6)}));
+  EXPECT_LT(worst_cross_track(run.samples), 0.15);
+  EXPECT_NEAR(run.samples.back().pose.x, run.path.points.back().x, 0.15);
+  EXPECT_NEAR(run.samples.back().pose.y, run.path.points.back().y, 0.15);
+}
+
+TEST_P(LateralLawClosedLoop, TakesTheTurnIntoAnArcWithoutLargeDeviation) {
+  // The curvature jumps from 0 to 1/5 at 4 m: the steering has to be ramped by the actuator.
+  const Drive run = drive(Pose2D{}, path_of({line_segment(4.0), arc_segment(5.0, kPiOver2, true)}));
+  EXPECT_LT(worst_cross_track(run.samples), 0.20);
+}
+
+TEST_P(LateralLawClosedLoop, ParksInReverseAfterAForwardApproach) {
+  // The shape of a perpendicular parking maneuver, at the speeds of the planner.
+  const Path path =
+      path_of({line_segment(4.0), arc_segment(5.0, kPiOver2, false, Direction::Reverse, 0.6),
+               line_segment(3.0, Direction::Reverse, 0.6)});
+  const Drive run = drive(Pose2D{}, path);
+
+  const PathPoint& goal = path.points.back();  // (-1, -8) heading +y
+  const Pose2D& end = run.samples.back().pose;
+  EXPECT_NEAR(end.x, goal.x, 0.05);
+  EXPECT_NEAR(end.y, goal.y, 0.05);
+  EXPECT_LT(std::abs(wrap_angle(end.yaw - goal.yaw)), 1.5 * kDegrees);
+  EXPECT_LT(worst_cross_track(run.samples), 0.25);
+  EXPECT_NEAR(run.samples.back().v, 0.0, 1e-9);
+}
+
+// The test that separates a law that is merely stable from one that is damped: a 0.5 m offset at
+// full speed must settle without a big overshoot.
+TEST_P(LateralLawClosedLoop, SettlesFromAHalfMeterOffsetAtFullSpeedWithoutALargeOvershoot) {
+  ClosedLoop sim{Pose2D{0.0, 0.5, 0.0}, path_of({line_segment(30.0)}), params()};
+  double lowest_y = 0.0;
+  while (sim.now() < 25.0) {
+    sim.run(0.01);
+    lowest_y = std::min(lowest_y, sim.last().pose.y);
+  }
+  EXPECT_GT(lowest_y, -0.10);
+  EXPECT_LT(std::abs(sim.last().pose.y), 0.02);
+  EXPECT_LT(std::abs(sim.last().pose.yaw), 0.02);
 }
 
 }  // namespace

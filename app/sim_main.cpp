@@ -6,6 +6,7 @@
 #include <string>
 
 #include "psim/app/metrics.hpp"
+#include "psim/app/metrics_table.hpp"
 #include "psim/app/sim_runner.hpp"
 #include "psim/logging/csv_sink.hpp"
 #include "psim/logging/multi_sink.hpp"
@@ -16,14 +17,25 @@
 namespace {
 
 void print_usage() {
-  std::cerr << "usage: sim_main SCENARIO.json [--estimator ekf|dead_reckoning] [--out DIR]\n"
+  std::cerr << "usage: sim_main SCENARIO.json [--estimator ekf|dead_reckoning]\n"
+               "                [--controller pure_pursuit|stanley|kanayama] [--out DIR]\n"
                "  Runs the scenario headless and writes DIR/run.csv and DIR/scene.json\n"
-               "  (default DIR: out/<scenario name>/<estimator>).\n"
+               "  (default DIR: out/<scenario name>/<estimator>, with _<controller> appended for\n"
+               "  a controller other than pure pursuit).\n"
                "  Plot with: python3 tools/plot.py DIR   (two DIRs of one scenario are overlaid)\n";
 }
 
 const char* estimator_name(psim::EstimatorKind kind) {
   return kind == psim::EstimatorKind::Ekf ? "ekf" : "dead_reckoning";
+}
+
+// The directory name of a run: the estimator, plus the controller when it is not the default.
+std::string run_name(const psim::AlgorithmSettings& algorithms) {
+  std::string name = estimator_name(algorithms.estimator);
+  if (algorithms.controller != psim::ControllerKind::PurePursuit) {
+    name += std::string{"_"} + psim::name_of(algorithms.controller);
+  }
+  return name;
 }
 
 std::optional<psim::EstimatorKind> parse_estimator(const std::string& name) {
@@ -62,6 +74,7 @@ int main(int argc, char** argv) {
   std::filesystem::path scenario_file;
   std::filesystem::path out_dir;
   std::optional<psim::EstimatorKind> estimator;
+  std::optional<psim::ControllerKind> controller;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     if (arg == "--out" && i + 1 < argc) {
@@ -70,6 +83,13 @@ int main(int argc, char** argv) {
       estimator =
           parse_estimator(argv[++i]);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       if (!estimator.has_value()) {
+        print_usage();
+        return 2;
+      }
+    } else if (arg == "--controller" && i + 1 < argc) {
+      controller = psim::controller_from_name(
+          argv[++i]);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      if (!controller.has_value()) {
         print_usage();
         return 2;
       }
@@ -90,9 +110,11 @@ int main(int argc, char** argv) {
     if (estimator.has_value()) {
       scenario.algorithms.estimator = estimator.value_or(psim::EstimatorKind::Ekf);
     }
+    if (controller.has_value()) {
+      scenario.algorithms.controller = controller.value_or(psim::ControllerKind::PurePursuit);
+    }
     if (out_dir.empty()) {
-      out_dir = std::filesystem::path{"out"} / scenario.name /
-                estimator_name(scenario.algorithms.estimator);
+      out_dir = std::filesystem::path{"out"} / scenario.name / run_name(scenario.algorithms);
     }
 
     psim::RunOptions options;
@@ -117,8 +139,13 @@ int main(int argc, char** argv) {
     const psim::Pose2D& truth = summary.final_truth;
     const auto& est = summary.final_estimate;
     std::cout << "scenario " << scenario.name << " with "
-              << estimator_name(scenario.algorithms.estimator) << ": " << summary.snapshots
-              << " ticks, " << psim::to_seconds(summary.end_time) << " s\n"
+              << estimator_name(scenario.algorithms.estimator)
+              << (summary.final_maneuver.has_value()
+                      ? std::string{" and the "} + psim::name_of(scenario.algorithms.controller) +
+                            " controller"
+                      : std::string{})
+              << ": " << summary.snapshots << " ticks, " << psim::to_seconds(summary.end_time)
+              << " s\n"
               << "  final truth    x=" << truth.x << " y=" << truth.y << " yaw=" << truth.yaw
               << " v=" << summary.final_speed << '\n'
               << "  final estimate x=" << est.x(0) << " y=" << est.x(1) << " yaw=" << est.x(2)
