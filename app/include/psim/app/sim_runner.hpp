@@ -5,6 +5,7 @@
 #include <limits>
 #include <optional>
 
+#include "psim/control/maneuver_fsm.hpp"
 #include "psim/logging/scene.hpp"
 #include "psim/msgs/estimate.hpp"
 #include "psim/msgs/interfaces.hpp"
@@ -44,6 +45,8 @@ struct RunSummary {
   double final_speed{0.0};
   EstimatedState final_estimate;
   ConsistencySummary consistency;
+  // Closed loop (the scenario has a path): where the maneuver state machine ended up.
+  std::optional<ManeuverState> final_maneuver;
 };
 
 // Runs a scenario headless from t = 0 to the scenario duration, in the tick order of

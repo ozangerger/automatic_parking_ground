@@ -102,6 +102,56 @@ std::vector<ScriptedCommand> parse_open_loop(const Json& array) {
   return script;
 }
 
+Direction parse_direction(const std::string& text, const std::string& where) {
+  if (text == "forward") {
+    return Direction::Forward;
+  }
+  if (text == "reverse") {
+    return Direction::Reverse;
+  }
+  fail("'" + where + ".direction' must be \"forward\" or \"reverse\", got \"" + text + "\"");
+}
+
+PathSegmentSpec parse_segment(const Json& entry, const std::string& where) {
+  PathSegmentSpec segment;
+  const std::string type = require(entry, "type", where).get<std::string>();
+  if (type == "line") {
+    segment.type = SegmentType::Line;
+    segment.length = require_positive(entry, "length_m", where);
+  } else if (type == "arc") {
+    segment.type = SegmentType::Arc;
+    segment.radius = require_positive(entry, "radius_m", where);
+    segment.angle = require_positive(entry, "angle_rad", where);
+    const std::string turn = require(entry, "turn", where).get<std::string>();
+    if (turn != "left" && turn != "right") {
+      fail("'" + where + ".turn' must be \"left\" or \"right\", got \"" + turn + "\"");
+    }
+    segment.left = turn == "left";
+  } else {
+    fail("'" + where + ".type' must be \"line\" or \"arc\", got \"" + type + "\"");
+  }
+  segment.direction = parse_direction(entry.value("direction", std::string{"forward"}), where);
+  segment.speed = entry.contains("speed") ? require_positive(entry, "speed", where) : 1.0;
+  return segment;
+}
+
+void parse_path(const Json& object, Scenario& scenario) {
+  if (!object.is_object()) {
+    fail("'path' must be an object");
+  }
+  const std::string where = "path";
+  if (object.contains("spacing_m")) {
+    scenario.path_spacing = require_positive(object, "spacing_m", where);
+  }
+  const Json& segments = require(object, "segments", where);
+  if (!segments.is_array() || segments.empty()) {
+    fail("'path.segments' must be a non-empty array");
+  }
+  for (std::size_t i = 0; i < segments.size(); ++i) {
+    scenario.path.push_back(parse_segment(segments[i], "path.segments[" + std::to_string(i) + "]"));
+  }
+}
+
 EstimatorKind parse_estimator(const std::string& text) {
   if (text == "ekf") {
     return EstimatorKind::Ekf;
@@ -151,6 +201,13 @@ Scenario parse_document(const Json& doc) {
 
   if (doc.contains("open_loop")) {
     scenario.open_loop = parse_open_loop(doc.at("open_loop"));
+  }
+
+  if (doc.contains("path")) {
+    if (!scenario.open_loop.empty()) {
+      fail("'path' and 'open_loop' cannot be combined: a scenario is scripted or closed-loop");
+    }
+    parse_path(doc.at("path"), scenario);
   }
 
   if (doc.contains("noise")) {

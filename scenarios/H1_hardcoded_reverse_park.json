@@ -1,0 +1,21 @@
+{
+  "name": "H1_hardcoded_reverse_park",
+  "seed": 1,
+  "duration_s": 32.0,
+  "start_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+  "slot": {"pose": {"x": -1.0, "y": -8.0, "yaw": 1.5707963267948966}, "width": 2.6, "length": 5.5},
+  "obstacles": [
+    {"name": "car_left", "vertices": [[-4.2, -8.7], [-2.4, -8.7], [-2.4, -4.2], [-4.2, -4.2]]},
+    {"name": "car_right", "vertices": [[0.4, -8.7], [2.2, -8.7], [2.2, -4.2], [0.4, -4.2]]},
+    {"name": "back_wall", "vertices": [[-4.2, -10.0], [2.2, -10.0], [2.2, -9.6], [-4.2, -9.6]]}
+  ],
+  "algorithms": {"estimator": "ekf", "uss_updates": true},
+  "path": {
+    "spacing_m": 0.1,
+    "segments": [
+      {"type": "line", "length_m": 4.0, "direction": "forward", "speed": 1.0},
+      {"type": "arc", "radius_m": 5.0, "angle_rad": 1.5707963267948966, "turn": "right", "direction": "reverse", "speed": 1.0},
+      {"type": "line", "length_m": 3.0, "direction": "reverse", "speed": 1.0}
+    ]
+  }
+}

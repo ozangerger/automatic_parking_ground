@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "psim/app/scripted_commander.hpp"
+#include "psim/control/parking_controller.hpp"
 #include "psim/fusion/consistency_monitor.hpp"
 #include "psim/fusion/dead_reckoning.hpp"
 #include "psim/fusion/ekf.hpp"
@@ -20,6 +21,7 @@
 #include "psim/sensors/steering_sensor.hpp"
 #include "psim/sensors/ultrasonic_array.hpp"
 #include "psim/sensors/wheel_odometry.hpp"
+#include "psim/sim_core/path_builder.hpp"
 #include "psim/sim_core/scheduler.hpp"
 #include "psim/sim_core/sim_clock.hpp"
 #include "psim/vehicle_if/bus_buffer.hpp"
@@ -80,6 +82,19 @@ std::unique_ptr<IEstimator> make_estimator(const Scenario& scenario,
   throw std::invalid_argument("unknown estimator");
 }
 
+// The ECU's controller, matched to the vehicle's published data (wheelbase and steering limit).
+std::unique_ptr<ParkingController> make_controller(const Scenario& scenario,
+                                                   const VehicleParams& vehicle) {
+  if (scenario.path.empty()) {
+    return nullptr;
+  }
+  ControlParams params;
+  params.lateral.wheelbase = vehicle.wheelbase;
+  params.lateral.max_steer = vehicle.max_steer;
+  params.longitudinal.max_accel = std::min(params.longitudinal.max_accel, vehicle.max_accel);
+  return std::make_unique<ParkingController>(params);
+}
+
 class Simulation {
  public:
   Simulation(const Scenario& scenario, const RunOptions& options)
@@ -100,11 +115,19 @@ class Simulation {
         estimator_{make_estimator(scenario, config_.odometry, options.vehicle,
                                   options.ekf_time_align_horizon)},
         commander_{scenario.open_loop},
+        path_{scenario.path.empty()
+                  ? Path{}
+                  : build_path(scenario.start_pose, scenario.path, scenario.path_spacing)},
+        controller_{make_controller(scenario, options.vehicle)},
+        controller_state_{scenario.algorithms.controller_state},
         sensor_scheduler_{clock_.dt()},
         ecu_scheduler_{clock_.dt()},
         latest_uss_(uss_.size()),
         slot_pose_{scenario.slot.has_value() ? std::optional<Pose2D>{scenario.slot->pose}
                                              : std::nullopt} {
+    for (std::size_t id = 0; id < latest_uss_.size(); ++id) {
+      latest_uss_[id].id = static_cast<std::uint8_t>(id);
+    }
     schedule_sensors();
     schedule_ecu_tasks();
   }
@@ -140,6 +163,9 @@ class Simulation {
       summary.consistency.mean_nees = nees_sum_ / static_cast<double>(nees_count_);
     }
     summary.consistency.covariance_sane = covariance_sane_;
+    if (controller_ != nullptr) {
+      summary.final_maneuver = controller_->state();
+    }
     return summary;
   }
 
@@ -169,18 +195,34 @@ class Simulation {
   void schedule_ecu_tasks() {
     ecu_scheduler_.add_task(period_from_hz(kFusionPredictHz),
                             [this](SimTime t) { estimator_->predict_to(t); });
-    // Open-loop scenarios: the scripted commander plays the controller's part.
+    // Scenarios with a path run the controller; the others (open loop) play a script.
     ecu_scheduler_.add_task(period_from_hz(kControlHz), [this](SimTime t) {
-      last_cmd_ = commander_.command_at(t);
+      last_cmd_ = controller_ != nullptr ? control_command(t) : commander_.command_at(t);
       command_bus_.push(kCommandSignal, t, last_cmd_);
     });
+  }
+
+  [[nodiscard]] VehicleCmd control_command(SimTime t) {
+    // Truth as the controller's state is the S2 debug switch; it is decided here, outside the
+    // ECU code, which cannot tell the difference.
+    const EstimatedState state =
+        controller_state_ == StateSource::Truth ? truth_state(t) : estimator_->estimate();
+    return controller_->compute(t, state, path_, latest_uss_);
+  }
+
+  [[nodiscard]] EstimatedState truth_state(SimTime t) const {
+    const VehicleTruth now = truth(t);
+    EstimatedState state;
+    state.stamp = t;
+    state.x << now.pose.x, now.pose.y, now.pose.yaw, now.v;
+    return state;
   }
 
   void deliver_sensor_messages(SimTime t) {
     for (const SensorMsg& msg : sensor_bus_.pop_due(t)) {
       estimator_->on_message(msg);
       if (const auto* uss = std::get_if<UssMsg>(&msg)) {
-        latest_uss_.at(uss->id) = uss->range;
+        latest_uss_.at(uss->id) = *uss;
       }
     }
   }
@@ -231,11 +273,12 @@ class Simulation {
       snapshot.nis = sum / static_cast<double>(tick_nis_.size());
     }
     for (std::size_t id = 0; id < uss_.size(); ++id) {
-      snapshot.uss.push_back(UssRay{uss_.mount_pose(now, id), latest_uss_[id]});
+      snapshot.uss.push_back(UssRay{uss_.mount_pose(now, id), latest_uss_[id].range});
     }
     if (slot_pose_.has_value()) {
       snapshot.slot_pose = slot_pose_.value_or(Pose2D{});
     }
+    snapshot.planned_path = path_;
     snapshot.cmd = last_cmd_;
     sink_->on_snapshot(snapshot);
   }
@@ -260,6 +303,9 @@ class Simulation {
 
   std::unique_ptr<IEstimator> estimator_;
   ScriptedCommander commander_;
+  Path path_;                                      // empty in open-loop scenarios
+  std::unique_ptr<ParkingController> controller_;  // null in open-loop scenarios
+  StateSource controller_state_;
   Scheduler sensor_scheduler_;
   Scheduler ecu_scheduler_;
 
@@ -269,7 +315,7 @@ class Simulation {
   std::size_t nees_count_{0};
   bool covariance_sane_{true};
 
-  std::vector<std::optional<double>> latest_uss_;  // newest range per sensor, as the ECU sees it
+  std::vector<UssMsg> latest_uss_;  // newest message per sensor, as the ECU sees it
   std::optional<Pose2D> slot_pose_;
   VehicleCmd last_cmd_;
 };
@@ -314,6 +360,12 @@ StaticScene make_static_scene(const Scenario& scenario, const VehicleParams& veh
     }
     scene.slot = outline;
     scene.slot_pose = slot_pose;
+  }
+  if (!scenario.path.empty()) {
+    for (const PathPoint& point :
+         build_path(scenario.start_pose, scenario.path, scenario.path_spacing).points) {
+      scene.path.push_back(ScenePoint{point.x, point.y});
+    }
   }
   scene.car_footprint = {{vehicle.x_min(), -kHalf * vehicle.width},
                          {vehicle.x_max(), -kHalf * vehicle.width},

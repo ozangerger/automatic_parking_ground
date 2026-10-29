@@ -27,10 +27,12 @@ struct StaticScene {
   std::optional<ScenePolygon> slot;       // world frame outline
   std::optional<Pose2D> slot_pose;        // rear axle target; written with `slot` only
   std::vector<ScenePoint> car_footprint;  // vehicle frame, to draw the car at a pose
+  std::vector<ScenePoint> path;  // the path the controller is given, rear axle, world frame
 };
 
 // JSON text of the scene: {"name", "obstacles": [{"name", "vertices": [[x, y], ...]}],
-// "slot": {"vertices", "pose": {"x", "y", "yaw"}}, "car": [[x, y], ...]}; absent parts are omitted.
+// "slot": {"vertices", "pose": {"x", "y", "yaw"}}, "car": [[x, y], ...], "path": [[x, y], ...]};
+// absent parts are omitted.
 [[nodiscard]] std::string scene_to_json(const StaticScene& scene);
 
 // Writes scene_to_json to `file`, creating parent directories. Throws std::runtime_error when

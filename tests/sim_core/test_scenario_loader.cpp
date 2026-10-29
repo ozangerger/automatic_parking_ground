@@ -150,6 +150,64 @@ TEST(ScenarioLoader, ParsesTheOpenLoopScript) {
   EXPECT_EQ(s.open_loop[2].gear, Gear::Park);
 }
 
+TEST(ScenarioLoader, ParsesAHardcodedPath) {
+  const Scenario s = parse_scenario(R"({
+    "name": "p", "seed": 1, "duration_s": 5, "start_pose": {"x": 0, "y": 0, "yaw": 0},
+    "path": {"spacing_m": 0.2, "segments": [
+      {"type": "line", "length_m": 6, "speed": 0.8},
+      {"type": "arc", "radius_m": 4.5, "angle_rad": 1.5, "turn": "right", "direction": "reverse"}
+    ]}})");
+  ASSERT_EQ(s.path.size(), 2U);
+  EXPECT_NEAR(s.path_spacing, 0.2, 1e-12);
+  EXPECT_EQ(s.path[0].type, SegmentType::Line);
+  EXPECT_NEAR(s.path[0].length, 6.0, 1e-12);
+  EXPECT_NEAR(s.path[0].speed, 0.8, 1e-12);
+  EXPECT_EQ(s.path[0].direction, Direction::Forward);  // the default
+  EXPECT_EQ(s.path[1].type, SegmentType::Arc);
+  EXPECT_NEAR(s.path[1].radius, 4.5, 1e-12);
+  EXPECT_NEAR(s.path[1].angle, 1.5, 1e-12);
+  EXPECT_FALSE(s.path[1].left);
+  EXPECT_EQ(s.path[1].direction, Direction::Reverse);
+  EXPECT_NEAR(s.path[1].speed, 1.0, 1e-12);  // the default
+}
+
+TEST(ScenarioLoader, RejectsInvalidPaths) {
+  const std::string head = R"({"name": "a", "seed": 1, "duration_s": 5,
+                               "start_pose": {"x":0,"y":0,"yaw":0}, "path": )";
+  EXPECT_NE(error_message(head + R"({"segments": []}})").find("segments"), std::string::npos);
+  EXPECT_NE(error_message(head + R"({"segments": [{"type": "spiral"}]}})").find("type"),
+            std::string::npos);
+  EXPECT_NE(
+      error_message(head + R"({"segments": [{"type": "line", "length_m": -2}]}})").find("length_m"),
+      std::string::npos);
+  EXPECT_NE(
+      error_message(head + R"({"segments": [{"type": "arc", "radius_m": 3, "angle_rad": 1}]}})")
+          .find("turn"),
+      std::string::npos);
+  EXPECT_NE(error_message(head + R"({"segments": [{"type": "arc", "radius_m": 3, "angle_rad": 1,
+                                                   "turn": "up"}]}})")
+                .find("turn"),
+            std::string::npos);
+  EXPECT_NE(
+      error_message(head +
+                    R"({"segments": [{"type": "line", "length_m": 1, "direction": "sideways"}]}})")
+          .find("direction"),
+      std::string::npos);
+  EXPECT_NE(
+      error_message(head + R"({"spacing_m": 0, "segments": [{"type": "line", "length_m": 1}]}})")
+          .find("spacing_m"),
+      std::string::npos);
+}
+
+TEST(ScenarioLoader, ApathAndAnOpenLoopScriptCannotBeCombined) {
+  EXPECT_NE(error_message(R"({"name": "a", "seed": 1, "duration_s": 5,
+      "start_pose": {"x":0,"y":0,"yaw":0},
+      "open_loop": [{"t_s": 0, "gear": "Drive"}],
+      "path": {"segments": [{"type": "line", "length_m": 1}]}})")
+                .find("cannot be combined"),
+            std::string::npos);
+}
+
 TEST(ScenarioLoader, AScenarioWithoutAScriptHasNone) {
   EXPECT_TRUE(parse_scenario(kMinimalScenario).open_loop.empty());
 }

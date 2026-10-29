@@ -5,7 +5,7 @@ Usage:
     python3 tools/plot.py RUN_DIR [RUN_DIR2] [--label A --label B] [-o OUT.png] [--dark] [--show]
 
 Each RUN_DIR holds run.csv (one row per tick, columns as documented in csv_sink.hpp) and,
-optionally, scene.json (obstacles, slot, car footprint). With two run directories of the same
+optionally, scene.json (obstacles, slot, car footprint, planned path). With two run directories of the same
 scenario (same seed, so the same truth) the estimates are overlaid, for example:
 
     sim_main scenarios/S1_constant_steering.json --estimator dead_reckoning
@@ -127,6 +127,13 @@ def draw_trajectory(ax, runs, scene, theme):
         ax.add_patch(PolygonPatch(slot["vertices"], closed=True, fill=False,
                                   edgecolor=theme["ink_secondary"], linewidth=1.0, linestyle=(0, (4, 3)),
                                   zorder=2))
+
+    path = scene.get("path")
+    if path:
+        # The path the controller was given: neutral ink, thin, so that it stays a reference line.
+        ax.plot([point[0] for point in path], [point[1] for point in path],
+                color=theme["ink_secondary"], linewidth=1.0, linestyle=(0, (1, 2)),
+                label="planned path", zorder=3)
 
     truth = runs[0]["data"]
     ax.plot(truth["truth_x"], truth["truth_y"], color=theme["truth"], linewidth=LINE_WIDTH,

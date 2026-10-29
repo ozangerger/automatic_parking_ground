@@ -83,6 +83,10 @@ std::string scene_to_json(const StaticScene& scene) {
     out << ",\n  \"car\": ";
     write_points(out, scene.car_footprint);
   }
+  if (!scene.path.empty()) {
+    out << ",\n  \"path\": ";
+    write_points(out, scene.path);
+  }
   out << "\n}\n";
   return out.str();
 }

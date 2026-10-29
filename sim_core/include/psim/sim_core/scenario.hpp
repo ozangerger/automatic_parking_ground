@@ -9,6 +9,7 @@
 
 #include "psim/msgs/time.hpp"
 #include "psim/msgs/types.hpp"
+#include "psim/sim_core/path_builder.hpp"
 
 namespace psim {
 
@@ -59,6 +60,10 @@ struct Scenario {
   std::optional<SlotSpec> slot;
   std::vector<ObstacleSpec> obstacles;
   std::vector<ScriptedCommand> open_loop;  // sorted by time; empty = no scripted commands
+  // A hardcoded path (PLAN.md's fallback to the planner): when present the controller drives it
+  // closed loop; it excludes `open_loop`. Built with build_path(start_pose, path, path_spacing).
+  std::vector<PathSegmentSpec> path;
+  double path_spacing{kDefaultPathSpacing};  // m
   NoiseSettings noise;
   AlgorithmSettings algorithms;
 };

@@ -47,6 +47,25 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
   NEES and covariance sanity. The mean NIS is useless with outliers; use the median and the share.
 - The EKF assumes the vehicle starts parked (speed prior 5 mm/s); scenarios must start at rest.
 
+## Control (control/) and the hardcoded path
+- `ParkingController` (an `IController`): `PathCursor` (progress along the current segment, never
+  backwards), `LateralController` (pure pursuit on the rear axle, rate-limited steering, lookahead
+  2-4 m: shorter lookaheads are unstable with the actuator's delay, lag and rate limit),
+  `LongitudinalController` (reference speed = min(profile, braking curve), ramp, feedforward, lead
+  compensation, PI) and `ManeuverFsm` (Idle/Approach/ReverseIn/Done/Abort).
+- A path is a list of segments by direction. The vehicle stops at the end of each, changes gear only at
+  a standstill, then drives the next one. Beyond the end of a segment the lookahead target continues
+  straight along the final heading (clamping to the last point leaves a yaw error at the end).
+- Abort: an echo in the driving direction closer than `abort_range_at(speed)` (0.25 m plus the reaction
+  and braking distance) for 0.12 s brakes to a standstill; stays aborted until a different path.
+- Until the planner exists (2.4) the path is hardcoded in the scenario (`"path"`, excludes `"open_loop"`):
+  `{"spacing_m": 0.1, "segments": [{"type": "line"|"arc", "length_m" | "radius_m" + "angle_rad" +
+  "turn": "left"|"right", "direction": "forward"|"reverse", "speed": m/s}, ...]}`; each segment starts
+  where the previous one ended (`build_path` in `sim_core`). `H1_hardcoded_reverse_park` backs into a slot.
+- `algorithms.controller_state: "truth"` (scenario field, honored only by the app) feeds the controller
+  the true pose instead of the estimate.
+- `sim_main` prints the final maneuver state; `scene.json` carries the path and `plot.py` draws it dotted.
+
 ## Tests
 - Sanitizer presets build with `-O1 -g`: Eigen at `-O0` under ASan is 15x slower.
 - `ctest --preset linux-gcc-debug -LE slow` skips the whole-scenario runs (`app_slow_tests`).

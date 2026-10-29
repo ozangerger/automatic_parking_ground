@@ -1,5 +1,5 @@
 psim_add_test(app_tests
-  SOURCES test_scripted_commander.cpp test_sim_runner.cpp test_scenarios.cpp
+  SOURCES test_scripted_commander.cpp test_sim_runner.cpp test_scenarios.cpp test_closed_loop.cpp
   DEPS sim_runner)
 target_compile_definitions(app_tests PRIVATE
   PSIM_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/scenarios")
