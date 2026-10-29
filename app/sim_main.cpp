@@ -5,7 +5,7 @@
 #include "psim/geometry/polygon.hpp"
 #include "psim/logging/module.hpp"
 #include "psim/planning/module.hpp"
-#include "psim/plant/module.hpp"
+#include "psim/plant/vehicle_params.hpp"
 #include "psim/sensors/module.hpp"
 #include "psim/sim_core/sim_clock.hpp"
 #include "psim/vehicle_if/module.hpp"
@@ -17,9 +17,9 @@ int main() {
             << "world(obstacles=" << psim::Map{}.size() << ")" << ", "
             << "geometry(unit_square_area="
             << psim::Polygon{{{0, 0}, {1, 0}, {1, 1}, {0, 1}}}.area() << ")"
-            << ", " << psim::plant::kModuleName << ", " << psim::sensors::kModuleName << ", "
-            << psim::vehicle_if::kModuleName << ", " << psim::fusion::kModuleName << ", "
-            << psim::planning::kModuleName << ", " << psim::control::kModuleName << ", "
-            << psim::logging::kModuleName << '\n';
+            << ", " << "plant(length=" << psim::VehicleParams{}.length() << ")" << ", "
+            << psim::sensors::kModuleName << ", " << psim::vehicle_if::kModuleName << ", "
+            << psim::fusion::kModuleName << ", " << psim::planning::kModuleName << ", "
+            << psim::control::kModuleName << ", " << psim::logging::kModuleName << '\n';
   return 0;
 }

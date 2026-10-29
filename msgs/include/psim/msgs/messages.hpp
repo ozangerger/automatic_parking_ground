@@ -13,7 +13,7 @@ namespace psim {
 struct VehicleCmd {
   SimTime stamp{};
   double steer_angle{0.0};  // rad, front wheel angle
-  double accel{0.0};        // m/s^2, magnitude along the driving direction given by `gear`
+  double accel{0.0};  // m/s^2 along the direction of travel set by `gear`: >0 speeds up, <0 brakes
   Gear gear{Gear::Park};
 };
 

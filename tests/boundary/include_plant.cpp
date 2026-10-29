@@ -1,3 +1,3 @@
-#include "psim/plant/module.hpp"
+#include "psim/plant/vehicle_params.hpp"
 
-int main() { return psim::plant::kModuleName.empty() ? 1 : 0; }
+int main() { return psim::VehicleParams{}.length() > 0.0 ? 0 : 1; }
