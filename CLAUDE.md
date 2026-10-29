@@ -133,3 +133,9 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 - `ctest --preset linux-gcc-debug -LE slow` skips the whole-scenario runs (`app_slow_tests`).
 - Scenarios in `scenarios/`: S0 straight, S1 constant steering (+ `_degraded_sensors`), S4 lot drive-by
   (open loop past parked cars with the S4 sensor faults; the closed-loop S4 comes with the planner).
+
+## Slides
+- `docs/side_slip_kinematic_vs_dynamic.pptx` (side slip vs tire slip, kinematic vs dynamic bicycle model, 14 slides + 2 appendix,
+  speaker notes). Built by `tools/slides/side_slip_deck.py` from the figures of `side_slip_figures.py` (written to
+  `out/slides/side_slip/`); the numbers come from `side_slip_model.py` (closed-form, assumed sedan parameters, not simulator output).
+  Needs python-pptx and matplotlib: `uv venv ~/.venvs/psim-slides && uv pip install --python ~/.venvs/psim-slides/bin/python python-pptx matplotlib numpy`.
