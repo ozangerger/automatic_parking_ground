@@ -8,6 +8,7 @@
 
 #include "psim/app/scripted_commander.hpp"
 #include "psim/fusion/dead_reckoning.hpp"
+#include "psim/fusion/ekf.hpp"
 #include "psim/plant/actuator_model.hpp"
 #include "psim/plant/bicycle_model.hpp"
 #include "psim/sensors/gnss_ref.hpp"
@@ -41,17 +42,27 @@ constexpr SignalId kCommandSignal{SignalKind::Command, 0};
 constexpr double kHalf = 0.5;
 
 std::unique_ptr<IEstimator> make_estimator(const Scenario& scenario,
-                                           const WheelOdometryParams& odometry) {
-  if (scenario.algorithms.estimator != EstimatorKind::DeadReckoning) {
-    throw std::invalid_argument(
-        "scenario asks for the EKF, which does not exist yet (step 2.1); "
-        "use \"estimator\": \"dead_reckoning\"");
+                                           const WheelOdometryParams& odometry,
+                                           const VehicleParams& vehicle) {
+  // The ECU knows the nominal wheel and the vehicle data, not the real wheel radius error.
+  switch (scenario.algorithms.estimator) {
+    case EstimatorKind::DeadReckoning: {
+      DeadReckoningParams params;
+      params.wheel_radius = odometry.wheel_radius;
+      params.ticks_per_rev = odometry.ticks_per_rev;
+      params.initial_pose = scenario.start_pose;
+      return std::make_unique<DeadReckoning>(params);
+    }
+    case EstimatorKind::Ekf: {
+      EkfParams params;
+      params.initial_pose = scenario.start_pose;
+      params.wheelbase = vehicle.wheelbase;
+      params.wheel_radius = odometry.wheel_radius;
+      params.ticks_per_rev = odometry.ticks_per_rev;
+      return std::make_unique<Ekf>(params);
+    }
   }
-  DeadReckoningParams params;
-  params.wheel_radius = odometry.wheel_radius;  // the ECU knows the nominal wheel, not its error
-  params.ticks_per_rev = odometry.ticks_per_rev;
-  params.initial_pose = scenario.start_pose;
-  return std::make_unique<DeadReckoning>(params);
+  throw std::invalid_argument("unknown estimator");
 }
 
 class Simulation {
@@ -71,7 +82,7 @@ class Simulation {
         sensor_bus_{scenario.seed, kStreamBusSensors},
         command_bus_{scenario.seed, kStreamBusCommands},
         decoder_{CommandLimits{options.vehicle.max_steer, options.vehicle.max_accel}},
-        estimator_{make_estimator(scenario, config_.odometry)},
+        estimator_{make_estimator(scenario, config_.odometry, options.vehicle)},
         commander_{scenario.open_loop},
         sensor_scheduler_{clock_.dt()},
         ecu_scheduler_{clock_.dt()},

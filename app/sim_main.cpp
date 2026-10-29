@@ -2,6 +2,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include "psim/app/sim_runner.hpp"
@@ -13,9 +14,24 @@
 namespace {
 
 void print_usage() {
-  std::cerr << "usage: sim_main SCENARIO.json [--out DIR]\n"
+  std::cerr << "usage: sim_main SCENARIO.json [--estimator ekf|dead_reckoning] [--out DIR]\n"
                "  Runs the scenario headless and writes DIR/run.csv and DIR/scene.json\n"
-               "  (default DIR: out/<scenario name>). Plot with: python3 tools/plot.py DIR\n";
+               "  (default DIR: out/<scenario name>/<estimator>).\n"
+               "  Plot with: python3 tools/plot.py DIR   (two DIRs of one scenario are overlaid)\n";
+}
+
+const char* estimator_name(psim::EstimatorKind kind) {
+  return kind == psim::EstimatorKind::Ekf ? "ekf" : "dead_reckoning";
+}
+
+std::optional<psim::EstimatorKind> parse_estimator(const std::string& name) {
+  if (name == "ekf") {
+    return psim::EstimatorKind::Ekf;
+  }
+  if (name == "dead_reckoning") {
+    return psim::EstimatorKind::DeadReckoning;
+  }
+  return std::nullopt;
 }
 
 }  // namespace
@@ -23,10 +39,18 @@ void print_usage() {
 int main(int argc, char** argv) {
   std::filesystem::path scenario_file;
   std::filesystem::path out_dir;
+  std::optional<psim::EstimatorKind> estimator;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     if (arg == "--out" && i + 1 < argc) {
       out_dir = argv[++i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    } else if (arg == "--estimator" && i + 1 < argc) {
+      estimator =
+          parse_estimator(argv[++i]);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      if (!estimator.has_value()) {
+        print_usage();
+        return 2;
+      }
     } else if (scenario_file.empty() && arg.rfind("--", 0) != 0) {
       scenario_file = arg;
     } else {
@@ -40,9 +64,13 @@ int main(int argc, char** argv) {
   }
 
   try {
-    const psim::Scenario scenario = psim::load_scenario(scenario_file);
+    psim::Scenario scenario = psim::load_scenario(scenario_file);
+    if (estimator.has_value()) {
+      scenario.algorithms.estimator = estimator.value_or(psim::EstimatorKind::Ekf);
+    }
     if (out_dir.empty()) {
-      out_dir = std::filesystem::path{"out"} / scenario.name;
+      out_dir = std::filesystem::path{"out"} / scenario.name /
+                estimator_name(scenario.algorithms.estimator);
     }
 
     psim::RunOptions options;
@@ -54,8 +82,9 @@ int main(int argc, char** argv) {
 
     const psim::Pose2D& truth = summary.final_truth;
     const auto& est = summary.final_estimate;
-    std::cout << "scenario " << scenario.name << ": " << summary.snapshots << " ticks, "
-              << psim::to_seconds(summary.end_time) << " s\n"
+    std::cout << "scenario " << scenario.name << " with "
+              << estimator_name(scenario.algorithms.estimator) << ": " << summary.snapshots
+              << " ticks, " << psim::to_seconds(summary.end_time) << " s\n"
               << "  final truth    x=" << truth.x << " y=" << truth.y << " yaw=" << truth.yaw
               << " v=" << summary.final_speed << '\n'
               << "  final estimate x=" << est.x(0) << " y=" << est.x(1) << " yaw=" << est.x(2)

@@ -151,14 +151,19 @@ TEST(SimRunner, SnapshotCarriesTheSlotPoseWhenThereIsASlot) {
   EXPECT_NEAR(sink.snapshots.back().slot_pose.yaw, 1.5, 1e-12);
 }
 
-TEST(SimRunner, TheEkfIsNotAvailableYet) {
-  Scenario s = scenario(kQuiet);
-  s.algorithms.estimator = EstimatorKind::Ekf;
-  try {
-    (void)run_scenario(s);
-    FAIL() << "expected std::invalid_argument";
-  } catch (const std::invalid_argument& e) {
-    EXPECT_NE(std::string(e.what()).find("EKF"), std::string::npos);
+TEST(SimRunner, RunsWithTheEkfAndWithDeadReckoning) {
+  for (const char* estimator : {"ekf", "dead_reckoning"}) {
+    const Scenario s = parse_scenario(
+        std::string(
+            R"({"name": "t", "seed": 7, "duration_s": 6, "start_pose": {"x": 0, "y": 0, "yaw": 0},
+                        "noise": {"enabled": false}, "algorithms": {"estimator": ")") +
+        estimator + R"("}, "open_loop": [{"t_s": 0, "gear": "Drive", "accel": 1.0}]})");
+    RunSummary summary;
+    const Recording run = run_recorded(s, &summary);
+    EXPECT_GT(summary.final_truth.x, 8.0) << estimator;
+    EXPECT_LT(std::abs(summary.final_estimate.x(0) - summary.final_truth.x), 0.1) << estimator;
+    // The estimate and its covariance are reported at every tick.
+    EXPECT_GT(run.snapshots.back().est.stamp.count(), 5'900'000'000) << estimator;
   }
 }
 

@@ -4,7 +4,7 @@
   "duration_s": 7.0,
   "start_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
   "noise": {"enabled": false},
-  "algorithms": {"estimator": "dead_reckoning", "uss_updates": false},
+  "algorithms": {"estimator": "ekf", "uss_updates": false},
   "open_loop": [
     {"t_s": 0.0, "gear": "Drive", "steer": 0.0, "accel": 1.0}
   ]

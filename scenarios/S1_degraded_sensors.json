@@ -1,0 +1,12 @@
+{
+  "name": "S1_degraded_sensors",
+  "seed": 1,
+  "duration_s": 32.0,
+  "start_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+  "noise": {"enabled": true, "overrides": {"odom_scale_error": 0.03, "gyro_bias": 0.01}},
+  "algorithms": {"estimator": "ekf", "uss_updates": false},
+  "open_loop": [
+    {"t_s": 0.0, "gear": "Drive", "steer": 0.3, "accel": 0.5},
+    {"t_s": 4.0, "gear": "Drive", "steer": 0.3, "accel": 0.0}
+  ]
+}

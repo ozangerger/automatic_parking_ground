@@ -33,8 +33,7 @@ struct RunSummary {
 // A snapshot at time t pairs the truth at t with the ECU's estimate after everything due at t
 // has been delivered and processed, so truth and estimate describe the same instant.
 //
-// Throws std::invalid_argument for a scenario this step cannot run (the EKF does not exist
-// yet) and ScenarioError-like failures from the components for invalid configuration.
+// Throws std::invalid_argument when a component rejects its configuration.
 RunSummary run_scenario(const Scenario& scenario, const RunOptions& options = {});
 
 [[nodiscard]] Map make_map(const Scenario& scenario);
