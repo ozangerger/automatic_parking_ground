@@ -172,6 +172,24 @@ TEST(ParkingController, StaysOnTheReverseLegOfAPathThatComesBackOverTheForwardLe
   EXPECT_NEAR(sim.last().pose.x, 0.0, 0.08);
 }
 
+// The default lookahead is as short as the actuator's delay, lag and rate limit allow at 1 m/s
+// (1.0 m diverged on this offset). This is the margin test: a 0.5 m offset must settle without a
+// big overshoot.
+TEST(ParkingController, SettlesFromAHalfMeterOffsetAtFullSpeedWithoutALargeOvershoot) {
+  ClosedLoop sim{Pose2D{0.0, 0.5, 0.0}, path_of({line_segment(30.0)})};
+  double lowest_y = 0.0;
+  for (int i = 0; i < 2000; ++i) {
+    sim.run(0.01);
+    lowest_y = std::min(lowest_y, sim.last().pose.y);
+    if (sim.last().t > 25.0) {
+      break;
+    }
+  }
+  EXPECT_GT(lowest_y, -0.10);  // overshoot past the path stays below 10 cm
+  EXPECT_LT(std::abs(sim.last().pose.y), 0.02);
+  EXPECT_LT(std::abs(sim.last().pose.yaw), 0.02);
+}
+
 // ---- abort -------------------------------------------------------------------------------------
 
 TEST(ParkingControllerAbort, AFrontObstacleStopsAForwardDrive) {

@@ -13,6 +13,9 @@
 #include "psim/fusion/dead_reckoning.hpp"
 #include "psim/fusion/ekf.hpp"
 #include "psim/logging/nees.hpp"
+#include "psim/msgs/path_builder.hpp"
+#include "psim/planning/perpendicular_planner.hpp"
+#include "psim/planning/slot_detector.hpp"
 #include "psim/plant/actuator_model.hpp"
 #include "psim/plant/bicycle_model.hpp"
 #include "psim/sensors/gnss_ref.hpp"
@@ -21,7 +24,6 @@
 #include "psim/sensors/steering_sensor.hpp"
 #include "psim/sensors/ultrasonic_array.hpp"
 #include "psim/sensors/wheel_odometry.hpp"
-#include "psim/sim_core/path_builder.hpp"
 #include "psim/sim_core/scheduler.hpp"
 #include "psim/sim_core/sim_clock.hpp"
 #include "psim/vehicle_if/bus_buffer.hpp"
@@ -38,6 +40,7 @@ constexpr std::int64_t kOdometryHz = 50;
 constexpr std::int64_t kSteeringHz = 50;
 constexpr std::int64_t kUssHz = 20;
 constexpr std::int64_t kFusionPredictHz = 100;
+constexpr std::int64_t kPlanningHz = 10;
 constexpr std::int64_t kControlHz = 50;
 
 constexpr std::uint64_t kStreamBusSensors = 1000;
@@ -85,7 +88,7 @@ std::unique_ptr<IEstimator> make_estimator(const Scenario& scenario,
 // The ECU's controller, matched to the vehicle's published data (wheelbase and steering limit).
 std::unique_ptr<ParkingController> make_controller(const Scenario& scenario,
                                                    const VehicleParams& vehicle) {
-  if (scenario.path.empty()) {
+  if (scenario.path.empty() && scenario.algorithms.planner == PlannerKind::None) {
     return nullptr;
   }
   ControlParams params;
@@ -93,6 +96,17 @@ std::unique_ptr<ParkingController> make_controller(const Scenario& scenario,
   params.lateral.max_steer = vehicle.max_steer;
   params.longitudinal.max_accel = std::min(params.longitudinal.max_accel, vehicle.max_accel);
   return std::make_unique<ParkingController>(params);
+}
+
+// What the planner is told about the vehicle: the published vehicle data.
+PlannerVehicle make_planner_vehicle(const VehicleParams& vehicle) {
+  PlannerVehicle planner;
+  planner.wheelbase = vehicle.wheelbase;
+  planner.max_steer = vehicle.max_steer;
+  planner.rear_overhang = vehicle.rear_overhang;
+  planner.front_overhang = vehicle.front_overhang;
+  planner.width = vehicle.width;
+  return planner;
 }
 
 class Simulation {
@@ -120,6 +134,9 @@ class Simulation {
                   : build_path(scenario.start_pose, scenario.path, scenario.path_spacing)},
         controller_{make_controller(scenario, options.vehicle)},
         controller_state_{scenario.algorithms.controller_state},
+        planner_vehicle_{make_planner_vehicle(options.vehicle)},
+        prior_map_{make_prior_map(scenario, options.vehicle)},
+        plan_requested_{scenario.algorithms.planner != PlannerKind::None},
         sensor_scheduler_{clock_.dt()},
         ecu_scheduler_{clock_.dt()},
         latest_uss_(uss_.size()),
@@ -166,6 +183,8 @@ class Simulation {
     if (controller_ != nullptr) {
       summary.final_maneuver = controller_->state();
     }
+    summary.path = path_;
+    summary.plan_status = plan_status_;
     return summary;
   }
 
@@ -195,6 +214,12 @@ class Simulation {
   void schedule_ecu_tasks() {
     ecu_scheduler_.add_task(period_from_hz(kFusionPredictHz),
                             [this](SimTime t) { estimator_->predict_to(t); });
+    // Planning runs until it has a path; replanning on events is not part of this step.
+    ecu_scheduler_.add_task(period_from_hz(kPlanningHz), [this](SimTime t) {
+      if (plan_requested_ && !plan_status_.has_value()) {
+        plan_path(t);
+      }
+    });
     // Scenarios with a path run the controller; the others (open loop) play a script.
     ecu_scheduler_.add_task(period_from_hz(kControlHz), [this](SimTime t) {
       last_cmd_ = controller_ != nullptr ? control_command(t) : commander_.command_at(t);
@@ -202,12 +227,31 @@ class Simulation {
     });
   }
 
+  // The state the ECU's planner and controller work on. Truth as that state is the S2 debug switch;
+  // it is decided here, outside the ECU code, which cannot tell the difference.
+  [[nodiscard]] EstimatedState ecu_state(SimTime t) const {
+    return controller_state_ == StateSource::Truth ? truth_state(t) : estimator_->estimate();
+  }
+
   [[nodiscard]] VehicleCmd control_command(SimTime t) {
-    // Truth as the controller's state is the S2 debug switch; it is decided here, outside the
-    // ECU code, which cannot tell the difference.
-    const EstimatedState state =
-        controller_state_ == StateSource::Truth ? truth_state(t) : estimator_->estimate();
-    return controller_->compute(t, state, path_, latest_uss_);
+    return controller_->compute(t, ecu_state(t), path_, latest_uss_);
+  }
+
+  void plan_path(SimTime t) {
+    const EstimatedState state = ecu_state(t);
+    const Pose2D start{state.x(0), state.x(1), state.x(2)};
+    const std::optional<ParkingSlot> slot =
+        SlotDetector{planner_vehicle_}.detect(prior_map_, start);
+    if (!slot.has_value()) {
+      plan_status_ = PlanStatus::NoSolution;  // no usable slot in the prior map
+      return;
+    }
+    PerpendicularPlanner planner{planner_vehicle_};
+    PlanResult result = planner.plan(start, *slot, prior_map_);
+    plan_status_ = result.status;
+    if (result.status == PlanStatus::Ok) {
+      path_ = std::move(result.path);
+    }
   }
 
   [[nodiscard]] EstimatedState truth_state(SimTime t) const {
@@ -303,9 +347,13 @@ class Simulation {
 
   std::unique_ptr<IEstimator> estimator_;
   ScriptedCommander commander_;
-  Path path_;                                      // empty in open-loop scenarios
+  Path path_;  // given by the scenario or planned; empty in open-loop scenarios and before planning
   std::unique_ptr<ParkingController> controller_;  // null in open-loop scenarios
   StateSource controller_state_;
+  PlannerVehicle planner_vehicle_;
+  PriorMap prior_map_;
+  bool plan_requested_;
+  std::optional<PlanStatus> plan_status_;  // set once the planner has run
   Scheduler sensor_scheduler_;
   Scheduler ecu_scheduler_;
 
@@ -321,6 +369,22 @@ class Simulation {
 };
 
 }  // namespace
+
+PriorMap make_prior_map(const Scenario& scenario, const VehicleParams& vehicle) {
+  PriorMap map;
+  for (const ObstacleSpec& obstacle : scenario.obstacles) {
+    map.obstacles.push_back(obstacle.vertices);
+  }
+  if (scenario.slot.has_value()) {
+    ParkingSlot slot;
+    slot.pose = scenario.slot->pose;
+    slot.width = scenario.slot->width;
+    slot.length = scenario.slot->length;
+    slot.back_offset = vehicle.rear_overhang;
+    map.slots.push_back(slot);
+  }
+  return map;
+}
 
 Map make_map(const Scenario& scenario) {
   Map map;

@@ -208,6 +208,32 @@ TEST(ScenarioLoader, ApathAndAnOpenLoopScriptCannotBeCombined) {
             std::string::npos);
 }
 
+TEST(ScenarioLoader, ParsesThePlannerChoice) {
+  const std::string head = R"({"name": "a", "seed": 1, "duration_s": 5,
+      "start_pose": {"x":0,"y":0,"yaw":0},
+      "slot": {"pose": {"x":1,"y":2,"yaw":0}, "width": 2.6, "length": 5.5},
+      "algorithms": {"planner": ")";
+  EXPECT_EQ(parse_scenario(head + R"(perpendicular"}})").algorithms.planner,
+            PlannerKind::Perpendicular);
+  EXPECT_EQ(parse_scenario(head + R"(none"}})").algorithms.planner, PlannerKind::None);
+  EXPECT_EQ(parse_scenario(kMinimalScenario).algorithms.planner, PlannerKind::None);
+  EXPECT_NE(error_message(head + R"(magic"}})").find("planner"), std::string::npos);
+}
+
+TEST(ScenarioLoader, APlannerNeedsASlotAndExcludesAGivenPath) {
+  const std::string base = R"("name": "a", "seed": 1, "duration_s": 5,
+      "start_pose": {"x":0,"y":0,"yaw":0}, "algorithms": {"planner": "perpendicular"})";
+  EXPECT_NE(error_message("{" + base + "}").find("slot"), std::string::npos);
+  EXPECT_NE(error_message("{" + base + R"(, "slot": {"pose": {"x":1,"y":2,"yaw":0}, "width": 2,
+      "length": 5}, "path": {"segments": [{"type": "line", "length_m": 1}]}})")
+                .find("cannot be combined"),
+            std::string::npos);
+  EXPECT_NE(error_message("{" + base + R"(, "slot": {"pose": {"x":1,"y":2,"yaw":0}, "width": 2,
+      "length": 5}, "open_loop": [{"t_s": 0, "gear": "Drive"}]})")
+                .find("cannot be combined"),
+            std::string::npos);
+}
+
 TEST(ScenarioLoader, AScenarioWithoutAScriptHasNone) {
   EXPECT_TRUE(parse_scenario(kMinimalScenario).open_loop.empty());
 }

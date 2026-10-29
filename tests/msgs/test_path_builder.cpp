@@ -4,7 +4,7 @@
 #include <stdexcept>
 
 #include "psim/msgs/math.hpp"
-#include "psim/sim_core/path_builder.hpp"
+#include "psim/msgs/path_builder.hpp"
 
 namespace psim {
 namespace {

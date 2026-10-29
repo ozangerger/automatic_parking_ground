@@ -10,11 +10,12 @@ struct LateralParams {
   double wheelbase{2.7};         // m
   double max_steer{0.55};        // rad
   double steer_rate_limit{0.5};  // rad/s: what the steering actuator can do
-  double lookahead_gain{1.5};    // s: lookahead = gain * speed ...
-  // Shorter than about 1.5 m at 1 m/s the loop through the steering actuator (0.1 s delay, 0.15 s
-  // lag, 0.5 rad/s) is unstable: the correction overshoots and the car swings across the path.
-  double lookahead_min{2.0};  // m ... within these limits
-  double lookahead_max{4.0};  // m
+  // The delay and lag are fixed in time, so the stable lookahead shrinks with the speed: at 1 m/s
+  // it must stay near 2 m (1.5 m swings across the path), at 0.6 m/s 1.2 m is as good. Slow
+  // reversing therefore finishes a path more exactly (0.2 degrees against 1.2 at 1 m/s).
+  double lookahead_gain{2.0};  // s: lookahead = gain * speed ...
+  double lookahead_min{1.0};   // m ... within these limits
+  double lookahead_max{4.0};   // m
   // Close to the end of a segment the target point is the end point itself and pure pursuit
   // becomes erratic (PLAN.md section 14): the steering is held for the last stretch.
   double freeze_distance{0.3};  // m
@@ -37,7 +38,8 @@ class LateralController {
   // Forgets the previous steering command (a new path starts from `steer`).
   void reset(double steer = 0.0);
 
-  // The steering angle command for the vehicle at (x, y, yaw) driving at `speed` (magnitude).
+  // The steering angle command for the vehicle at (x, y, yaw). `speed` (magnitude) sizes the
+  // lookahead: pass the speed the vehicle is driving or about to drive.
   // Limited to the wheel angle and to the rate the actuator can follow between calls.
   [[nodiscard]] double steer(const PathCursor& cursor, double x, double y, double yaw, double speed,
                              SimTime now);

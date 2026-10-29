@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <gsl/span>
-
 #include <vector>
 
 #include "psim/msgs/estimate.hpp"
 #include "psim/msgs/messages.hpp"
 #include "psim/msgs/path.hpp"
+#include "psim/msgs/prior_map.hpp"
 #include "psim/msgs/snapshot.hpp"
 #include "psim/msgs/time.hpp"
 
@@ -66,7 +67,46 @@ class ISnapshotSink {
   ISnapshotSink() = default;
 };
 
-// IPathPlanner is added in step 2.4: its signature needs a prior-map type that the
-// dependency rules do not yet provide (see PLAN.md section 6).
+enum class PlanStatus : std::uint8_t {
+  Ok,
+  InvalidInput,  // a slot or vehicle that cannot be used, a start pose that is not finite
+  NoSolution,    // the geometry of the start pose and the slot admits no maneuver
+  Collision      // every candidate maneuver touches the prior map
+};
+
+[[nodiscard]] inline const char* to_string(PlanStatus status) {
+  switch (status) {
+    case PlanStatus::Ok:
+      return "Ok";
+    case PlanStatus::InvalidInput:
+      return "InvalidInput";
+    case PlanStatus::NoSolution:
+      return "NoSolution";
+    case PlanStatus::Collision:
+      return "Collision";
+  }
+  return "?";
+}
+
+struct PlanResult {
+  PlanStatus status{PlanStatus::NoSolution};
+  Path path;  // empty unless status == Ok; speed profile included
+};
+
+class IPathPlanner {
+ public:
+  virtual ~IPathPlanner() = default;
+  IPathPlanner(const IPathPlanner&) = delete;
+  IPathPlanner& operator=(const IPathPlanner&) = delete;
+  IPathPlanner(IPathPlanner&&) = delete;
+  IPathPlanner& operator=(IPathPlanner&&) = delete;
+
+  // The maneuver from `start` (a standstill) into `slot` that stays clear of the prior map.
+  [[nodiscard]] virtual PlanResult plan(const Pose2D& start, const ParkingSlot& slot,
+                                        const PriorMap& map) = 0;
+
+ protected:
+  IPathPlanner() = default;
+};
 
 }  // namespace psim

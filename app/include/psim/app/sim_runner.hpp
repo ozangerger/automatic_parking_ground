@@ -47,6 +47,10 @@ struct RunSummary {
   ConsistencySummary consistency;
   // Closed loop (the scenario has a path): where the maneuver state machine ended up.
   std::optional<ManeuverState> final_maneuver;
+  // The path the controller was given: the scenario's own, or the planned one (empty when
+  // planning failed, and in open-loop scenarios).
+  Path path;
+  std::optional<PlanStatus> plan_status;  // set when the scenario asks for a planner
 };
 
 // Runs a scenario headless from t = 0 to the scenario duration, in the tick order of
@@ -59,6 +63,9 @@ struct RunSummary {
 RunSummary run_scenario(const Scenario& scenario, const RunOptions& options = {});
 
 [[nodiscard]] Map make_map(const Scenario& scenario);
+// The ECU's copy of the lot: the obstacle polygons and the slot (with the vehicle's rear overhang
+// as the slot's back offset).
+[[nodiscard]] PriorMap make_prior_map(const Scenario& scenario, const VehicleParams& vehicle);
 [[nodiscard]] std::optional<Slot> make_slot(const Scenario& scenario, const VehicleParams& vehicle);
 
 // What the viewers need besides the per-tick log.

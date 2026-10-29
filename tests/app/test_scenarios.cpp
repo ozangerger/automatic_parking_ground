@@ -243,7 +243,7 @@ TEST(ScenarioS1Degraded, DeadReckoningSpiralsInWhileTheEkfStaysOnTheCircle) {
 TEST(Scenarios, AllScenarioFilesLoadAndRunInTheLinuxCiTime) {
   for (const char* file :
        {"S0_straight.json", "S1_constant_steering.json", "S1_degraded_sensors.json",
-        "S4_lot_drive_by.json", "H1_hardcoded_reverse_park.json"}) {
+        "S4_lot_drive_by.json", "H1_hardcoded_reverse_park.json", "S2_perpendicular_truth.json"}) {
     EXPECT_NO_THROW((void)run_scenario(load(file))) << file;
   }
 }

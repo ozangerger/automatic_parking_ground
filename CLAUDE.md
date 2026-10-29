@@ -50,7 +50,8 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 ## Control (control/) and the hardcoded path
 - `ParkingController` (an `IController`): `PathCursor` (progress along the current segment, never
   backwards), `LateralController` (pure pursuit on the rear axle, rate-limited steering, lookahead
-  2-4 m: shorter lookaheads are unstable with the actuator's delay, lag and rate limit),
+  1-4 m = 2 s x speed, sized for the larger of the actual and the profile speed; at 1 m/s under 2 m is
+  unstable with the actuator's delay, lag and rate limit, so slower speeds finish a path more exactly),
   `LongitudinalController` (reference speed = min(profile, braking curve), ramp, feedforward, lead
   compensation, PI) and `ManeuverFsm` (Idle/Approach/ReverseIn/Done/Abort).
 - A path is a list of segments by direction. The vehicle stops at the end of each, changes gear only at
@@ -65,6 +66,26 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 - `algorithms.controller_state: "truth"` (scenario field, honored only by the app) feeds the controller
   the true pose instead of the estimate.
 - `sim_main` prints the final maneuver state; `scene.json` carries the path and `plot.py` draws it dotted.
+
+## Planning (planning/)
+- `SlotDetector` (stage 1: the marked slots of the `PriorMap`, kept when the vehicle fits and nothing
+  touches the outline; nearest to a pose), `PathGenerator` (line - arc - line, see below) and
+  `apply_speed_profile` (trapezoid per direction run, 1 m/s forward, 0.6 m/s reversing, 0.1 m/s at the
+  ends because the controller stops by its own distance-to-go limit); `PerpendicularPlanner` is
+  `IPathPlanner` = generator + profile. The planner has its own `PlannerVehicle` (it must not see
+  `plant`); the app copies `VehicleParams` into it. `PriorMap`/`ParkingSlot`/`PlanResult` are in `msgs`.
+- Geometry: slot frame a = along the axis out of the slot, w = left. The start heading is across the
+  axis (45-135 degrees): drive forward lambda along it to the pre-park pose, stop, reverse an arc of
+  radius R (1.2 x the steering minimum first, then 1.1/1.4/1.7/2.0) tangent to the start heading and to the
+  slot axis, then straight to the slot pose. lambda < 0 (start past the pre-park pose) reverses first.
+  Candidates must keep 0.15 m clearance from the prior map (`PlanStatus::Collision` otherwise);
+  parallel or too-shallow headings and a final straight under 1 m give `NoSolution`.
+- `build_path` (lines and arcs to a sampled `Path`) lives in `msgs`, shared by the planner and scenarios.
+- Scenario: `algorithms.planner: "perpendicular"` needs a `slot` and excludes `path`/`open_loop`.
+  The app plans once at 10 Hz tick 0 from the controller's state source (estimate, or truth for S2).
+  `RunSummary::path` and `plan_status` report the result; `sim_main` writes the planned path to scene.json.
+- Scenarios: `S2_perpendicular_truth` (controller and planner on truth, PLAN section 9 limits);
+  `H1_hardcoded_reverse_park` stays as the hardcoded-path example.
 
 ## Tests
 - Sanitizer presets build with `-O1 -g`: Eigen at `-O0` under ASan is 15x slower.

@@ -191,6 +191,25 @@ TEST(SimRunner, StaticSceneDescribesMapSlotAndCar) {
   EXPECT_NEAR(scene.car_footprint[2].y, 0.9, 1e-12);
 }
 
+TEST(SimRunner, PriorMapCopiesObstaclesAndSlotForTheEcu) {
+  const Scenario s = scenario(R"("obstacles": [
+      {"name": "a", "vertices": [[0,0],[1,0],[1,1],[0,1]]},
+      {"name": "b", "vertices": [[3,0],[4,0],[4,1]]}],
+      "slot": {"pose": {"x": 2, "y": 0.5, "yaw": 0.3}, "width": 2.5, "length": 5})");
+  const PriorMap map = make_prior_map(s, VehicleParams{});
+  ASSERT_EQ(map.obstacles.size(), 2U);
+  EXPECT_EQ(map.obstacles[0].size(), 4U);
+  EXPECT_EQ(map.obstacles[1].size(), 3U);
+  EXPECT_NEAR(map.obstacles[1][2].x(), 4.0, 1e-12);
+  ASSERT_EQ(map.slots.size(), 1U);
+  EXPECT_NEAR(map.slots[0].pose.yaw, 0.3, 1e-12);
+  EXPECT_NEAR(map.slots[0].width, 2.5, 1e-12);
+  EXPECT_NEAR(map.slots[0].length, 5.0, 1e-12);
+  EXPECT_NEAR(map.slots[0].back_offset, VehicleParams{}.rear_overhang, 1e-12);
+
+  EXPECT_TRUE(make_prior_map(scenario(kQuiet), VehicleParams{}).slots.empty());
+}
+
 TEST(SimRunner, SceneWithoutASlotHasNone) {
   const Scenario s = scenario(kQuiet);
   EXPECT_FALSE(make_slot(s, VehicleParams{}).has_value());

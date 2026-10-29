@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "psim/msgs/path_builder.hpp"
 #include "psim/msgs/time.hpp"
 #include "psim/msgs/types.hpp"
-#include "psim/sim_core/path_builder.hpp"
 
 namespace psim {
 
@@ -36,12 +36,17 @@ struct NoiseSettings {
 
 enum class EstimatorKind : std::uint8_t { Ekf, DeadReckoning };
 enum class StateSource : std::uint8_t { Estimate, Truth };
+// Where the path comes from in a closed-loop scenario: given in the scenario file ("path"), or
+// planned by the ECU from the prior map, the slot and the start pose.
+enum class PlannerKind : std::uint8_t { None, Perpendicular };
 
 struct AlgorithmSettings {
   EstimatorKind estimator{EstimatorKind::Ekf};
   bool uss_updates{true};
   // StateSource::Truth is a debug switch for scenario S2 and is only honored by the app.
   StateSource controller_state{StateSource::Estimate};
+  // Anything but None needs a slot and excludes both `path` and `open_loop`.
+  PlannerKind planner{PlannerKind::None};
 };
 
 // One step of an open-loop command script: from `t` on, the vehicle is commanded like this.

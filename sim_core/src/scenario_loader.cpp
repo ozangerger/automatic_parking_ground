@@ -172,6 +172,16 @@ StateSource parse_state_source(const std::string& text) {
   fail("'algorithms.controller_state' must be \"estimate\" or \"truth\", got \"" + text + "\"");
 }
 
+PlannerKind parse_planner(const std::string& text) {
+  if (text == "none") {
+    return PlannerKind::None;
+  }
+  if (text == "perpendicular") {
+    return PlannerKind::Perpendicular;
+  }
+  fail("'algorithms.planner' must be \"none\" or \"perpendicular\", got \"" + text + "\"");
+}
+
 Scenario parse_document(const Json& doc) {
   Scenario scenario;
   scenario.name = require(doc, "name", "scenario").get<std::string>();
@@ -226,6 +236,17 @@ Scenario parse_document(const Json& doc) {
     scenario.algorithms.uss_updates = algorithms.value("uss_updates", true);
     scenario.algorithms.controller_state =
         parse_state_source(algorithms.value("controller_state", "estimate"));
+    scenario.algorithms.planner = parse_planner(algorithms.value("planner", "none"));
+  }
+  if (scenario.algorithms.planner != PlannerKind::None) {
+    if (!scenario.slot.has_value()) {
+      fail("'algorithms.planner' needs a 'slot' to park in");
+    }
+    if (!scenario.path.empty() || !scenario.open_loop.empty()) {
+      fail(
+          "'algorithms.planner' cannot be combined with 'path' or 'open_loop': the path is "
+          "planned");
+    }
   }
   return scenario;
 }

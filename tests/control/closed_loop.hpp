@@ -7,9 +7,9 @@
 
 #include "psim/control/parking_controller.hpp"
 #include "psim/msgs/math.hpp"
+#include "psim/msgs/path_builder.hpp"
 #include "psim/plant/actuator_model.hpp"
 #include "psim/plant/bicycle_model.hpp"
-#include "psim/sim_core/path_builder.hpp"
 
 namespace psim {
 

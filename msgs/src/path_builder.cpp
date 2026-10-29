@@ -1,4 +1,4 @@
-#include "psim/sim_core/path_builder.hpp"
+#include "psim/msgs/path_builder.hpp"
 
 #include <cmath>
 #include <stdexcept>

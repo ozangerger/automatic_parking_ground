@@ -74,11 +74,19 @@ int main(int argc, char** argv) {
     }
 
     psim::RunOptions options;
-    psim::write_scene(psim::make_static_scene(scenario, options.vehicle), out_dir / "scene.json");
+    psim::StaticScene scene = psim::make_static_scene(scenario, options.vehicle);
     psim::CsvSink sink{out_dir / "run.csv"};
     options.sink = &sink;
     const psim::RunSummary summary = psim::run_scenario(scenario, options);
     sink.flush();
+    // The path is only known after the run when the ECU planned it.
+    if (!summary.path.points.empty()) {
+      scene.path.clear();
+      for (const psim::PathPoint& point : summary.path.points) {
+        scene.path.push_back(psim::ScenePoint{point.x, point.y});
+      }
+    }
+    psim::write_scene(scene, out_dir / "scene.json");
 
     const psim::Pose2D& truth = summary.final_truth;
     const auto& est = summary.final_estimate;
@@ -91,6 +99,11 @@ int main(int argc, char** argv) {
               << " v=" << est.x(3) << '\n'
               << "  position error " << std::hypot(est.x(0) - truth.x, est.x(1) - truth.y) << " m\n"
               << "  wrote " << (out_dir / "run.csv").string() << " and scene.json\n";
+    if (summary.plan_status.has_value()) {
+      std::cout << "  plan: "
+                << psim::to_string(summary.plan_status.value_or(psim::PlanStatus::NoSolution))
+                << " (" << summary.path.points.size() << " points)\n";
+    }
     if (summary.final_maneuver.has_value()) {
       std::cout << "  maneuver: "
                 << psim::to_string(summary.final_maneuver.value_or(psim::ManeuverState::Idle))

@@ -90,8 +90,8 @@ TEST(LateralController, HoldsTheSteeringOverTheLastStretch) {
 }
 
 TEST(LateralController, LookaheadGrowsWithSpeedWithinLimits) {
-  // A vehicle 0.4 m beside a straight path: the steering to the target is smaller the farther the
-  // target. With the defaults the lookahead is 2 m at rest and 3 m at 2 m/s, 4 m at most.
+  // A vehicle 0.1 m beside a straight path: the steering to the target is smaller the farther the
+  // target. With the defaults the lookahead is 1 m at rest, 4 m from 2 m/s on.
   PathCursor cursor;
   cursor.reset(build_path(Pose2D{}, {line_segment(30.0)}, 0.1));
   cursor.update(0.0, 0.0);
@@ -99,15 +99,17 @@ TEST(LateralController, LookaheadGrowsWithSpeedWithinLimits) {
   params.steer_rate_limit = 100.0;  // compare the raw pure pursuit angles
   const auto steer_at = [&](double speed) {
     LateralController lateral{params};
-    return lateral.steer(cursor, 0.0, 0.4, 0.0, speed, at(1.0));
+    return lateral.steer(cursor, 0.0, 0.1, 0.0, speed, at(1.0));
   };
   const double rest = steer_at(0.0);
+  const double medium = steer_at(1.0);
   const double fast = steer_at(2.0);
   const double very_fast = steer_at(10.0);
-  EXPECT_NEAR(rest, pure_pursuit_steer(kL, 2.0, -0.4), 1e-9);       // 2 m lookahead: the minimum
-  EXPECT_NEAR(fast, pure_pursuit_steer(kL, 3.0, -0.4), 1e-9);       // 1.5 s * 2 m/s
-  EXPECT_NEAR(very_fast, pure_pursuit_steer(kL, 4.0, -0.4), 1e-9);  // capped at 4 m
-  EXPECT_LT(std::abs(fast), std::abs(rest));
+  EXPECT_NEAR(rest, pure_pursuit_steer(kL, 1.0, -0.1), 1e-9);       // 1 m lookahead: the minimum
+  EXPECT_NEAR(medium, pure_pursuit_steer(kL, 2.0, -0.1), 1e-9);     // 2 s * 1 m/s
+  EXPECT_NEAR(fast, pure_pursuit_steer(kL, 4.0, -0.1), 1e-9);       // 4 m: at the cap
+  EXPECT_NEAR(very_fast, pure_pursuit_steer(kL, 4.0, -0.1), 1e-9);  // capped at 4 m
+  EXPECT_LT(std::abs(medium), std::abs(rest));
 }
 
 TEST(LateralController, RejectsInvalidParameters) {

@@ -105,7 +105,10 @@ VehicleCmd ParkingController::compute(SimTime now, const EstimatedState& estimat
 
   cmd.gear = out.gear;
   if (out.steer) {
-    cmd.steer_angle = lateral_.steer(cursor_, x, y, yaw, std::abs(v), now);
+    // The lookahead is sized for the speed the vehicle is about to drive as well as the one it has:
+    // starting from rest, a short lookahead would make the first correction swing across the path.
+    const double lookahead_speed = std::max(std::abs(v), cursor_.nearest().speed);
+    cmd.steer_angle = lateral_.steer(cursor_, x, y, yaw, lookahead_speed, now);
   }
   if (out.drive) {
     cmd.accel = longitudinal_.accel(std::max(travel_speed, 0.0), cursor_.nearest().speed,
