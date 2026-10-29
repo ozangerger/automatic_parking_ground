@@ -1,0 +1,45 @@
+# Build trees and downloaded dependency archives (cmake presets use build/<preset>)
+/build/
+/out/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+
+# Tooling caches and generated indexes
+.cache/
+/compile_commands.json
+.clangd/
+
+# Simulation output (CsvSink / Rerun / plot.py write here); keep input scenarios in scenarios/
+/logs/
+/runs/
+*.rrd
+tools/*.png
+tools/*.svg
+
+# Python (tools/plot.py)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors and OS
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local Claude Code state (the shared CLAUDE.md stays tracked)
+.claude/settings.local.json
+.claude/projects/
+
+# Visual Studio / MSVC
+*.user
+*.suo
+*.vcxproj.user

@@ -1,0 +1,5 @@
+add_subdirectory(msgs)
+add_subdirectory(boundary)
+add_subdirectory(sim_core)
+add_subdirectory(geometry)
+add_subdirectory(world)

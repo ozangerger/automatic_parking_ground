@@ -1,0 +1,7 @@
+# Test code is full of literal expected values; naming a constant for each hides the intent.
+# bugprone-unchecked-optional-access cannot see through gtest's ASSERT_* macros, although every
+# test asserts has_value() before dereferencing.
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-avoid-magic-numbers,
+  -bugprone-unchecked-optional-access
