@@ -13,7 +13,7 @@ add_test(NAME boundary.dependency_rules
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/dependency_rules_test.cmake)
 
 foreach(ecu IN ITEMS fusion planning control)
-  foreach(sim IN ITEMS world plant sensors sim_core)
+  foreach(sim IN ITEMS world plant sensors sim_core vehicle_if)
     foreach(kind IN ITEMS ok bad)
       set(target boundary_${kind}_${ecu}_${sim})
       add_library(${target} OBJECT EXCLUDE_FROM_ALL include_${sim}.cpp)
