@@ -6,7 +6,7 @@
 #include "psim/logging/module.hpp"
 #include "psim/planning/module.hpp"
 #include "psim/plant/vehicle_params.hpp"
-#include "psim/sensors/module.hpp"
+#include "psim/sensors/ultrasonic_array.hpp"
 #include "psim/sim_core/sim_clock.hpp"
 #include "psim/vehicle_if/module.hpp"
 #include "psim/world/map.hpp"
@@ -18,8 +18,9 @@ int main() {
             << "geometry(unit_square_area="
             << psim::Polygon{{{0, 0}, {1, 0}, {1, 1}, {0, 1}}}.area() << ")"
             << ", " << "plant(length=" << psim::VehicleParams{}.length() << ")" << ", "
-            << psim::sensors::kModuleName << ", " << psim::vehicle_if::kModuleName << ", "
-            << psim::fusion::kModuleName << ", " << psim::planning::kModuleName << ", "
-            << psim::control::kModuleName << ", " << psim::logging::kModuleName << '\n';
+            << "sensors(uss=" << psim::default_uss_layout().size() << ")" << ", "
+            << psim::vehicle_if::kModuleName << ", " << psim::fusion::kModuleName << ", "
+            << psim::planning::kModuleName << ", " << psim::control::kModuleName << ", "
+            << psim::logging::kModuleName << '\n';
   return 0;
 }

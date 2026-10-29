@@ -1,3 +1,3 @@
-#include "psim/sensors/module.hpp"
+#include "psim/sensors/truth.hpp"
 
-int main() { return psim::sensors::kModuleName.empty() ? 1 : 0; }
+int main() { return psim::VehicleTruth{}.v == 0.0 ? 0 : 1; }

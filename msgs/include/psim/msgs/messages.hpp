@@ -44,4 +44,18 @@ struct UssMsg {
 
 using SensorMsg = std::variant<WheelOdomMsg, ImuMsg, SteerMsg, UssMsg>;
 
+// A sensor message together with the time it leaves the sensor (stamp + sensor latency).
+struct TimedSensorMsg {
+  SimTime available_at{};
+  SensorMsg msg;
+};
+
+// Position reference for evaluation only. Deliberately not part of SensorMsg: the ECU side
+// never sees it.
+struct GnssMsg {
+  SimTime stamp{};
+  double x{0.0};
+  double y{0.0};
+};
+
 }  // namespace psim
