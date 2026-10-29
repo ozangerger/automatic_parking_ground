@@ -3,7 +3,7 @@
 #include "psim/control/module.hpp"
 #include "psim/fusion/module.hpp"
 #include "psim/geometry/polygon.hpp"
-#include "psim/logging/module.hpp"
+#include "psim/logging/csv_sink.hpp"
 #include "psim/planning/module.hpp"
 #include "psim/plant/vehicle_params.hpp"
 #include "psim/sensors/ultrasonic_array.hpp"
@@ -21,6 +21,7 @@ int main() {
             << "sensors(uss=" << psim::default_uss_layout().size() << ")" << ", "
             << "vehicle_if(default_drop=" << psim::SignalConfig{}.drop_probability << ")" << ", "
             << psim::fusion::kModuleName << ", " << psim::planning::kModuleName << ", "
-            << psim::control::kModuleName << ", " << psim::logging::kModuleName << '\n';
+            << psim::control::kModuleName << ", "
+            << "logging(columns=" << psim::CsvSink::columns().size() << ")" << '\n';
   return 0;
 }
