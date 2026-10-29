@@ -13,7 +13,10 @@ scenario (same seed, so the same truth) the estimates are overlaid, for example:
     python3 tools/plot.py out/S1_constant_steering/dead_reckoning out/S1_constant_steering/ekf
 
 Panels: top-down trajectory of the truth and the estimate(s), position error and yaw error
-against time, and NIS against time when run.csv has an `nis` column.
+against time, and NIS against time when run.csv has an `nis` column. When scene.json has a planned
+path (closed-loop scenarios) three more panels follow: the distance of the truth to the path
+(cross-track error), the steering angle (commanded and actual) and the speed. The controller works
+on its estimate, so two runs of a closed-loop scenario drive different trajectories.
 
 Conventions match the simulator: SI units, x forward/east, y left/north, yaw counter-clockwise.
 Matplotlib axes already have y pointing up, so world coordinates are plotted unchanged; the one
@@ -234,6 +237,38 @@ def label_line_ends(ax, ends, theme):
                     color=theme["ink_secondary"], va="center", ha="left", annotation_clip=False)
 
 
+def distance_to_polyline(points, xs, ys):
+    """Distance of each (x, y) to the polyline through `points` (a list of [x, y])."""
+    path = np.asarray(points, dtype=float)
+    if len(path) < 2:
+        return np.hypot(xs - path[0, 0], ys - path[0, 1])
+    a, b = path[:-1], path[1:]
+    ab = b - a
+    length_sq = np.maximum(np.sum(ab * ab, axis=1), 1e-12)
+    best = np.full(len(xs), np.inf)
+    for index, (x, y) in enumerate(zip(xs, ys)):
+        t = np.clip(((x - a[:, 0]) * ab[:, 0] + (y - a[:, 1]) * ab[:, 1]) / length_sq, 0.0, 1.0)
+        best[index] = np.min(np.hypot(x - (a[:, 0] + t * ab[:, 0]), y - (a[:, 1] + t * ab[:, 1])))
+    return best
+
+
+def draw_steering(ax, runs, theme):
+    """Commanded steering (thin) and the actual front wheel angle (dashed like the run)."""
+    for index, run in enumerate(runs):
+        data = run["data"]
+        color = theme["estimates"][index]
+        if "cmd_steer" in data:
+            ax.plot(data["t_s"], np.degrees(data["cmd_steer"]), color=color, linewidth=0.9, alpha=0.6,
+                    label=f"{run['label']} command")
+        ax.plot(data["t_s"], np.degrees(data["truth_steer"]), color=color, linewidth=LINE_WIDTH,
+                linestyle=ESTIMATE_DASHES[index], label=f"{run['label']} actual")
+    ax.axhline(0.0, color=theme["ink_secondary"], linewidth=0.8)
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("angle (deg)")
+    ax.set_title("Steering angle: command and actual", loc="left", fontsize=11, color=theme["ink"])
+    style_legend(ax.legend(loc="lower right", frameon=False, fontsize=8.5), theme)
+
+
 def rms(values):
     values = values[np.isfinite(values)]
     return math.sqrt(float(np.mean(values ** 2))) if len(values) else math.nan
@@ -250,35 +285,62 @@ def make_figure(runs, scene, theme, title):
     import matplotlib.pyplot as plt
 
     has_nis = any("nis" in run["data"] and np.isfinite(run["data"]["nis"]).any() for run in runs)
-    panels = 3 if has_nis else 2
+    path = scene.get("path")
+    panels = 2 + (1 if has_nis else 0) + (3 if path else 0)
 
-    fig = plt.figure(figsize=(12.5, 6.5), facecolor=theme["surface"])
-    grid = fig.add_gridspec(panels, 2, width_ratios=(1.5, 1.0), hspace=0.55, wspace=0.34,
-                            left=0.06, right=0.90, top=0.83, bottom=0.09)
+    fig = plt.figure(figsize=(12.5, 6.5 if panels <= 3 else 2.1 * panels + 1.0), facecolor=theme["surface"])
+    top = 0.83 if panels <= 3 else 0.90
+    grid = fig.add_gridspec(panels, 2, width_ratios=(1.5, 1.0), hspace=0.75 if path else 0.55,
+                            wspace=0.34, left=0.06, right=0.90, top=top, bottom=0.06)
 
     ax_traj = fig.add_subplot(grid[:, 0])
     style_axes(ax_traj, theme)
     draw_trajectory(ax_traj, runs, scene, theme)
 
-    ax_pos = fig.add_subplot(grid[0, 1])
+    row = 0
+    ax_pos = fig.add_subplot(grid[row, 1])
     style_axes(ax_pos, theme)
     draw_series(ax_pos, runs, "pos_err", theme, "Position error (estimate vs truth)", "distance (m)")
     ax_pos.set_ylim(bottom=0.0)
 
-    ax_yaw = fig.add_subplot(grid[1, 1], sharex=ax_pos)
+    row += 1
+    ax_yaw = fig.add_subplot(grid[row, 1], sharex=ax_pos)
     style_axes(ax_yaw, theme)
     draw_series(ax_yaw, runs, "yaw_err", theme, "Yaw error (estimate vs truth)", "angle (deg)",
                 scale=180.0 / math.pi, zero_line=True, legend_loc="auto")
 
     if has_nis:
-        ax_nis = fig.add_subplot(grid[2, 1], sharex=ax_pos)
+        row += 1
+        ax_nis = fig.add_subplot(grid[row, 1], sharex=ax_pos)
         style_axes(ax_nis, theme)
         draw_series(ax_nis, runs, "nis", theme, "NIS of the filter updates (per tick)", "NIS",
                     sparse=True)
         draw_nis_reference(ax_nis, runs, theme)
 
+    if path:
+        for run in runs:
+            data = run["data"]
+            data["cross_track"] = distance_to_polyline(path, data["truth_x"], data["truth_y"])
+        row += 1
+        ax_ct = fig.add_subplot(grid[row, 1], sharex=ax_pos)
+        style_axes(ax_ct, theme)
+        draw_series(ax_ct, runs, "cross_track", theme, "Distance of the truth to the planned path",
+                    "distance (m)", scale=1.0)
+        ax_ct.set_ylim(bottom=0.0)
+
+        row += 1
+        ax_steer = fig.add_subplot(grid[row, 1], sharex=ax_pos)
+        style_axes(ax_steer, theme)
+        draw_steering(ax_steer, runs, theme)
+
+        row += 1
+        ax_speed = fig.add_subplot(grid[row, 1], sharex=ax_pos)
+        style_axes(ax_speed, theme)
+        draw_series(ax_speed, runs, "truth_v", theme, "Speed (negative: reversing)", "speed (m/s)",
+                    zero_line=True, legend_loc="lower right")
+
     fig.suptitle(title, x=0.06, ha="left", fontsize=13, color=theme["ink"])
-    fig.text(0.06, 0.905, summary_line(runs), fontsize=9.5, color=theme["ink_secondary"])
+    fig.text(0.06, top + 0.025, summary_line(runs), fontsize=9.5, color=theme["ink_secondary"])
     return fig
 
 
@@ -311,13 +373,13 @@ def main():
         label = args.label[index] if index < len(args.label) else default_label
         runs.append({"label": label, "data": data})
 
-    if len(runs) == 2:
+    scene = load_scene(args.run_dirs[0] / "scene.json")
+    if len(runs) == 2 and not scene.get("path"):  # closed loop: the truth differs by design
         a, b = runs[0]["data"], runs[1]["data"]
         if len(a["t_s"]) != len(b["t_s"]) or np.max(np.abs(a["truth_x"] - b["truth_x"])) > 1e-6:
             print("warning: the two runs have different truth; compare runs of one scenario "
                   "with the same seed", file=sys.stderr)
 
-    scene = load_scene(args.run_dirs[0] / "scene.json")
     theme = THEMES["dark" if args.dark else "light"]
     title = scene.get("name") or args.run_dirs[0].resolve().parent.name
     fig = make_figure(runs, scene, theme, title)
