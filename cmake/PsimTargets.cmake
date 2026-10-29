@@ -26,11 +26,16 @@ function(psim_add_library name)
   set_property(GLOBAL APPEND PROPERTY PSIM_LIBRARIES ${name})
 endfunction()
 
-# psim_add_test(<name> SOURCES <files>... DEPS <targets>...)
-# One GoogleTest executable per library, discovered by CTest.
+# psim_add_test(<name> SOURCES <files>... DEPS <targets>... [LABELS <labels>...])
+# One GoogleTest executable per library, discovered by CTest. Labels let a quick run skip
+# the expensive tests: ctest -LE slow
 function(psim_add_test name)
-  cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;DEPS")
+  cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;DEPS;LABELS")
   add_executable(${name} ${ARG_SOURCES})
   target_link_libraries(${name} PRIVATE ${ARG_DEPS} GTest::gtest_main)
-  gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
+  if(ARG_LABELS)
+    gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST PROPERTIES LABELS "${ARG_LABELS}")
+  else()
+    gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
+  endif()
 endfunction()

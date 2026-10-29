@@ -32,7 +32,23 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 ## Estimators (fusion/)
 - `DeadReckoning`: gyro heading + wheel ticks, no corrections. The baseline.
 - `Ekf`: 6 states [x, y, yaw, v, gyro bias, odometry scale]; predict with gyro and accelerometer;
-  scalar updates (chi-square gated) for wheel speed over 0.2 s windows and for the steering angle
-  (gyro = bias + v tan(delta) / L). The scale state is needed because a wheel radius error looks
-  like gyro bias on a constant-steering circle; see the comment in `fusion/include/psim/fusion/ekf.hpp`.
+  scalar updates (chi-square gated) for wheel speed over 0.2 s windows, for the steering angle
+  (gyro = bias + v tan(delta) / L) and, with a map, for ultrasonic echoes. The scale state is needed
+  because a wheel radius error looks like gyro bias on a constant-steering circle; see the comment in
+  `fusion/include/psim/fusion/ekf.hpp`.
+- Ultrasonic updates (`UssUpdate`): the range predicted by raycasting the sensor's fan from the *estimated*
+  pose into the ECU's own copy of the map. Skipped when nothing is hit, the beam grazes a wall, or a 1 mm
+  probe jumps (corner). The app gives the EKF the scenario's obstacles and `default_uss_layout()`.
+- Late messages (sensor latency): `TimeAlignBuffer` keeps checkpoints of the filter's resumable `Core`
+  and the processed messages; a message older than the state rewinds, replays in stamp order and
+  re-extrapolates. Anything that must not be rewound (the NIS diagnostics) lives outside `Core`.
+- `ConsistencyMonitor` (ECU side: NIS statistics, covariance sanity) and `logging/nees.hpp` (needs the
+  truth, evaluation only). `RunSummary::consistency` reports NIS count/median/share inside the 95 % bound,
+  NEES and covariance sanity. The mean NIS is useless with outliers; use the median and the share.
 - The EKF assumes the vehicle starts parked (speed prior 5 mm/s); scenarios must start at rest.
+
+## Tests
+- Sanitizer presets build with `-O1 -g`: Eigen at `-O0` under ASan is 15x slower.
+- `ctest --preset linux-gcc-debug -LE slow` skips the whole-scenario runs (`app_slow_tests`).
+- Scenarios in `scenarios/`: S0 straight, S1 constant steering (+ `_degraded_sensors`), S4 lot drive-by
+  (open loop past parked cars with the S4 sensor faults; the closed-loop S4 comes with the planner).

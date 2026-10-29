@@ -1,5 +1,6 @@
 #include "psim/app/sim_runner.hpp"
 
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -7,8 +8,10 @@
 #include <vector>
 
 #include "psim/app/scripted_commander.hpp"
+#include "psim/fusion/consistency_monitor.hpp"
 #include "psim/fusion/dead_reckoning.hpp"
 #include "psim/fusion/ekf.hpp"
+#include "psim/logging/nees.hpp"
 #include "psim/plant/actuator_model.hpp"
 #include "psim/plant/bicycle_model.hpp"
 #include "psim/sensors/gnss_ref.hpp"
@@ -40,10 +43,13 @@ constexpr std::uint64_t kStreamBusCommands = 2000;
 
 constexpr SignalId kCommandSignal{SignalKind::Command, 0};
 constexpr double kHalf = 0.5;
+constexpr double kMaxSigma = 10.0;           // m or rad: a covariance beyond this is not sane
+constexpr SimTime kNeesSkip{2'000'000'000};  // let the filter settle first
 
 std::unique_ptr<IEstimator> make_estimator(const Scenario& scenario,
                                            const WheelOdometryParams& odometry,
-                                           const VehicleParams& vehicle) {
+                                           const VehicleParams& vehicle,
+                                           SimTime time_align_horizon) {
   // The ECU knows the nominal wheel and the vehicle data, not the real wheel radius error.
   switch (scenario.algorithms.estimator) {
     case EstimatorKind::DeadReckoning: {
@@ -59,6 +65,15 @@ std::unique_ptr<IEstimator> make_estimator(const Scenario& scenario,
       params.wheelbase = vehicle.wheelbase;
       params.wheel_radius = odometry.wheel_radius;
       params.ticks_per_rev = odometry.ticks_per_rev;
+      params.time_align_horizon = time_align_horizon;
+      if (scenario.algorithms.uss_updates) {
+        // The ECU has its own copy of the map and knows where its sensors sit; it does not know
+        // what is wrong with the sensors (dropouts, outlier bursts), which the gate has to catch.
+        for (const ObstacleSpec& obstacle : scenario.obstacles) {
+          params.map.emplace_back(obstacle.vertices);
+        }
+        params.uss_mounts = default_uss_layout();
+      }
       return std::make_unique<Ekf>(params);
     }
   }
@@ -82,7 +97,8 @@ class Simulation {
         sensor_bus_{scenario.seed, kStreamBusSensors},
         command_bus_{scenario.seed, kStreamBusCommands},
         decoder_{CommandLimits{options.vehicle.max_steer, options.vehicle.max_accel}},
-        estimator_{make_estimator(scenario, config_.odometry, options.vehicle)},
+        estimator_{make_estimator(scenario, config_.odometry, options.vehicle,
+                                  options.ekf_time_align_horizon)},
         commander_{scenario.open_loop},
         sensor_scheduler_{clock_.dt()},
         ecu_scheduler_{clock_.dt()},
@@ -101,6 +117,7 @@ class Simulation {
       deliver_sensor_messages(t);  // 1. bus -> ECU
       ecu_scheduler_.run_due(t);   // 2. ECU tasks, commands onto the bus
       deliver_commands(t);         // 3. bus -> actuator
+      collect_diagnostics(t);      // NIS of the updates, NEES against the truth
       publish_snapshot(t);         //    truth(t) next to the estimate at t
       ++summary.snapshots;
       if (t >= duration_) {
@@ -115,6 +132,14 @@ class Simulation {
     summary.final_truth = model_.state().pose;
     summary.final_speed = model_.state().v;
     summary.final_estimate = estimator_->estimate();
+    summary.consistency.nis_count = nis_monitor_.count();
+    summary.consistency.mean_nis = nis_monitor_.mean_nis();
+    summary.consistency.median_nis = nis_monitor_.median_nis();
+    summary.consistency.fraction_nis_inside_95 = nis_monitor_.fraction_inside_bound();
+    if (nees_count_ > 0) {
+      summary.consistency.mean_nees = nees_sum_ / static_cast<double>(nees_count_);
+    }
+    summary.consistency.covariance_sane = covariance_sane_;
     return summary;
   }
 
@@ -166,6 +191,27 @@ class Simulation {
     }
   }
 
+  void collect_diagnostics(SimTime t) {
+    tick_nis_ = estimator_->take_update_nis();
+    for (const double nis : tick_nis_) {
+      nis_monitor_.add_nis(nis);
+    }
+    if (nis_monitor_.count() == 0) {
+      return;  // an estimator without measurement updates has no covariance worth checking
+    }
+    const EstimatedState estimate = estimator_->estimate();
+    covariance_sane_ =
+        covariance_sane_ && ConsistencyMonitor::covariance_is_sane(estimate.P, kMaxSigma);
+    if (t >= kNeesSkip) {
+      const VehicleState& truth_state = model_.state();
+      const double value = nees(estimate, truth_state.pose, truth_state.v);
+      if (std::isfinite(value)) {
+        nees_sum_ += value;
+        ++nees_count_;
+      }
+    }
+  }
+
   void publish_snapshot(SimTime t) {
     if (sink_ == nullptr) {
       return;
@@ -177,6 +223,13 @@ class Simulation {
     snapshot.truth_v = now.v;
     snapshot.truth_steer = now.steer_angle;
     snapshot.est = estimator_->estimate();
+    if (!tick_nis_.empty()) {
+      double sum = 0.0;
+      for (const double nis : tick_nis_) {
+        sum += nis;
+      }
+      snapshot.nis = sum / static_cast<double>(tick_nis_.size());
+    }
     for (std::size_t id = 0; id < uss_.size(); ++id) {
       snapshot.uss.push_back(UssRay{uss_.mount_pose(now, id), latest_uss_[id]});
     }
@@ -209,6 +262,12 @@ class Simulation {
   ScriptedCommander commander_;
   Scheduler sensor_scheduler_;
   Scheduler ecu_scheduler_;
+
+  ConsistencyMonitor nis_monitor_;
+  std::vector<double> tick_nis_;
+  double nees_sum_{0.0};
+  std::size_t nees_count_{0};
+  bool covariance_sane_{true};
 
   std::vector<std::optional<double>> latest_uss_;  // newest range per sensor, as the ECU sees it
   std::optional<Pose2D> slot_pose_;

@@ -18,10 +18,11 @@
     },
     {
       "name": "linux-gcc-debug",
-      "displayName": "Linux GCC Debug + ASan/UBSan",
+      "displayName": "Linux GCC Debug + ASan/UBSan (-O1)",
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O1 -g",
         "CMAKE_CXX_COMPILER": "g++",
         "PSIM_SANITIZE": "ON",
         "PSIM_WERROR": "ON"
@@ -29,10 +30,11 @@
     },
     {
       "name": "linux-clang-debug",
-      "displayName": "Linux Clang Debug + ASan/UBSan",
+      "displayName": "Linux Clang Debug + ASan/UBSan (-O1)",
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O1 -g",
         "CMAKE_CXX_COMPILER": "clang++",
         "PSIM_SANITIZE": "ON",
         "PSIM_WERROR": "ON"
@@ -44,6 +46,7 @@
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O1 -g",
         "CMAKE_CXX_COMPILER": "clang++",
         "PSIM_CLANG_TIDY": "ON",
         "PSIM_TIDY_WERROR": "ON",

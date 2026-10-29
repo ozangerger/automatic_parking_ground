@@ -4,6 +4,15 @@ psim_add_test(app_tests
 target_compile_definitions(app_tests PRIVATE
   PSIM_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/scenarios")
 
+# Whole-scenario acceptance runs with several estimators and seeds: seconds each under the
+# sanitizers. Skip them for a quick loop with `ctest -LE slow`.
+psim_add_test(app_slow_tests
+  SOURCES test_s4_lot.cpp
+  DEPS sim_runner
+  LABELS slow)
+target_compile_definitions(app_slow_tests PRIVATE
+  PSIM_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/scenarios")
+
 # The command-line tool end to end: runs a scenario and must exit 0.
 add_test(NAME app.sim_main_runs_s0
          COMMAND sim_main ${CMAKE_SOURCE_DIR}/scenarios/S0_straight.json

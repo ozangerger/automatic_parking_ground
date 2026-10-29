@@ -42,7 +42,8 @@ UltrasonicArray::UltrasonicArray(const Map& map, const UltrasonicParams& params,
                   params.max_range > params.min_range && params.sigma_abs >= 0.0 &&
                   params.sigma_rel >= 0.0 && params.rays >= 1 && params.beam_half_angle >= 0.0 &&
                   params.dropout >= 0.0 && params.dropout <= 1.0 && params.outlier >= 0.0 &&
-                  params.outlier <= 1.0;
+                  params.outlier <= 1.0 && params.burst_outlier >= 0.0 &&
+                  params.burst_outlier <= 1.0 && params.burst_duration >= SimTime::zero();
   if (!ok) {
     throw std::invalid_argument("UltrasonicArray: invalid parameters");
   }
@@ -82,12 +83,16 @@ TimedSensorMsg UltrasonicArray::sample(const VehicleTruth& truth, std::size_t id
   const double outlier_value_u = rng.uniform();
   const double noise_z = rng.gaussian();
 
+  const bool in_burst = truth.t >= params_.burst_start &&
+                        truth.t < params_.burst_start + params_.burst_duration;
+  const double outlier_probability = in_burst ? params_.burst_outlier : params_.outlier;
+
   UssMsg msg;
   msg.stamp = truth.t;
   msg.id = gsl::narrow<std::uint8_t>(id);
   if (dropout_u < params_.dropout) {
     // no echo
-  } else if (outlier_u < params_.outlier) {
+  } else if (outlier_u < outlier_probability) {
     msg.range = params_.min_range + outlier_value_u * (params_.max_range - params_.min_range);
   } else if (nearest.has_value()) {
     const double range = std::max(nearest.value_or(0.0), params_.min_range);

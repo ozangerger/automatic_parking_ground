@@ -61,6 +61,16 @@ TEST(SensorConfig, AppliesTheS4Overrides) {
   EXPECT_EQ(c.imu.latency.count(), 5'000'000);
 }
 
+TEST(SensorConfig, AppliesTheOutlierBurstOverrides) {
+  NoiseSettings noise;
+  noise.overrides = {{"uss_burst_start_s", 12.5}, {"uss_burst_duration_s", 1.5}, {"uss_burst_outlier", 0.8}};
+  const SensorConfig c = make_sensor_config(noise);
+  EXPECT_EQ(c.uss.burst_start.count(), 12'500'000'000);
+  EXPECT_EQ(c.uss.burst_duration.count(), 1'500'000'000);
+  EXPECT_NEAR(c.uss.burst_outlier, 0.8, 1e-12);
+  EXPECT_EQ(make_sensor_config(NoiseSettings{}).uss.burst_duration.count(), 0);  // no burst by default
+}
+
 TEST(SensorConfig, OverridesApplyOnTopOfDisabledNoise) {
   NoiseSettings noise;
   noise.enabled = false;

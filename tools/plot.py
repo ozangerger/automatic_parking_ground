@@ -158,9 +158,10 @@ def draw_trajectory(ax, runs, scene, theme):
 
 def draw_series(ax, runs, column, theme, title, ylabel, scale=1.0, zero_line=False, sparse=False,
                 legend_loc="upper left"):
-    """One line per run. With sparse=True only the finite samples are drawn, as small markers
-    joined by a thin line (events such as filter updates leave blank cells in between)."""
+    """One line per run. With sparse=True only the finite samples are drawn, as unconnected markers
+    (events such as filter updates leave blank cells in between)."""
     ends = []
+    plotted = 0
     for index, run in enumerate(runs):
         if column not in run["data"]:
             continue
@@ -170,19 +171,22 @@ def draw_series(ax, runs, column, theme, title, ylabel, scale=1.0, zero_line=Fal
         if sparse:
             keep = np.isfinite(values)
             t, values = t[keep], values[keep]
-            ax.plot(t, values, color=color, linewidth=0.8, marker="o", markersize=3.5,
-                    markeredgewidth=0, label=run["label"])
+            if not len(values):
+                continue  # e.g. dead reckoning has no measurement updates
+            ax.plot(t, values, color=color, linestyle="none", marker="o", markersize=3.0,
+                    markeredgewidth=0, alpha=0.7, label=run["label"])
         else:
             ax.plot(t, values, color=color, linewidth=LINE_WIDTH, linestyle=ESTIMATE_DASHES[index],
                     label=run["label"])
         if len(values):
             ends.append((values[-1], t[-1], run["label"]))
+            plotted += 1
     if zero_line:
         ax.axhline(0.0, color=theme["ink_secondary"], linewidth=0.8)
     ax.set_xlabel("time (s)")
     ax.set_ylabel(ylabel)
     ax.set_title(title, loc="left", fontsize=11, color=theme["ink"])
-    if len(runs) > 1:
+    if plotted > 1:
         if legend_loc == "auto":
             # Lines leave zero towards the dominant drift: the legend goes to the empty corner on
             # the other side of the start.
@@ -190,6 +194,23 @@ def draw_series(ax, runs, column, theme, title, ylabel, scale=1.0, zero_line=Fal
             legend_loc = "upper left" if finals and max(finals, key=abs) > 0 else "lower left"
         style_legend(ax.legend(loc=legend_loc, frameon=False, fontsize=8.5), theme)
         label_line_ends(ax, ends, theme)
+
+
+NIS_GATE = 6.635   # chi-square, 1 degree of freedom, 99 %: updates above it are rejected
+NIS_AXIS_TOP = 12.0
+
+
+def draw_nis_reference(ax, runs, theme):
+    """The gate, a bounded axis, and how many values the bound cuts off (rejected outliers)."""
+    ax.axhline(NIS_GATE, color=theme["ink_secondary"], linewidth=0.8, linestyle=(0, (4, 3)))
+    ax.annotate("gate 6.6", (ax.get_xlim()[1], NIS_GATE), xytext=(6, 0), textcoords="offset points",
+                fontsize=8.5, color=theme["ink_secondary"], va="center", annotation_clip=False)
+    ax.set_ylim(0.0, NIS_AXIS_TOP)
+    above = sum(int(np.sum(run["data"]["nis"][np.isfinite(run["data"]["nis"])] > NIS_AXIS_TOP))
+                for run in runs if "nis" in run["data"])
+    if above:
+        ax.text(0.99, 0.95, f"{above} ticks above {NIS_AXIS_TOP:.0f} not shown (rejected outliers)",
+                transform=ax.transAxes, ha="right", va="top", fontsize=8.5, color=theme["ink_secondary"])
 
 
 def label_line_ends(ax, ends, theme):
@@ -245,8 +266,9 @@ def make_figure(runs, scene, theme, title):
     if has_nis:
         ax_nis = fig.add_subplot(grid[2, 1], sharex=ax_pos)
         style_axes(ax_nis, theme)
-        draw_series(ax_nis, runs, "nis", theme, "NIS of the filter updates", "NIS", sparse=True)
-        ax_nis.set_ylim(bottom=0.0)
+        draw_series(ax_nis, runs, "nis", theme, "NIS of the filter updates (per tick)", "NIS",
+                    sparse=True)
+        draw_nis_reference(ax_nis, runs, theme)
 
     fig.suptitle(title, x=0.06, ha="left", fontsize=13, color=theme["ink"])
     fig.text(0.06, 0.905, summary_line(runs), fontsize=9.5, color=theme["ink_secondary"])

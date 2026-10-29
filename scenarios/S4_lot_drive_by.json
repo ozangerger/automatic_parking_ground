@@ -1,0 +1,36 @@
+{
+  "name": "S4_lot_drive_by",
+  "seed": 1,
+  "duration_s": 28.0,
+  "start_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+  "obstacles": [
+    {"name": "curb", "vertices": [[-6.0, -4.2], [40.0, -4.2], [40.0, -3.7], [-6.0, -3.7]]},
+    {"name": "car_0", "vertices": [[4.0, 2.4], [8.5, 2.4], [8.5, 4.2], [4.0, 4.2]]},
+    {"name": "car_1", "vertices": [[10.0, 2.4], [14.5, 2.4], [14.5, 4.2], [10.0, 4.2]]},
+    {"name": "car_2", "vertices": [[16.0, 2.4], [20.5, 2.4], [20.5, 4.2], [16.0, 4.2]]},
+    {"name": "car_3", "vertices": [[22.0, 2.4], [26.5, 2.4], [26.5, 4.2], [22.0, 4.2]]},
+    {"name": "car_4", "vertices": [[28.0, 2.4], [32.5, 2.4], [32.5, 4.2], [28.0, 4.2]]},
+    {"name": "end_wall", "vertices": [[38.0, -4.2], [39.0, -4.2], [39.0, 4.5], [38.0, 4.5]]}
+  ],
+  "noise": {
+    "enabled": true,
+    "overrides": {
+      "odom_scale_error": 0.03,
+      "gyro_bias": 0.01,
+      "uss_dropout": 0.1,
+      "uss_burst_start_s": 10.0,
+      "uss_burst_duration_s": 1.5,
+      "uss_burst_outlier": 0.6
+    }
+  },
+  "algorithms": {"estimator": "ekf", "uss_updates": true},
+  "open_loop": [
+    {"t_s": 0.0, "gear": "Drive", "steer": 0.0, "accel": 0.7},
+    {"t_s": 2.0, "gear": "Drive", "steer": 0.0, "accel": 0.0},
+    {"t_s": 3.5, "gear": "Drive", "steer": 0.05, "accel": 0.0},
+    {"t_s": 7.5, "gear": "Drive", "steer": -0.05, "accel": 0.0},
+    {"t_s": 15.5, "gear": "Drive", "steer": 0.05, "accel": 0.0},
+    {"t_s": 19.5, "gear": "Drive", "steer": 0.0, "accel": 0.0},
+    {"t_s": 23.5, "gear": "Drive", "steer": 0.0, "accel": -0.7}
+  ]
+}

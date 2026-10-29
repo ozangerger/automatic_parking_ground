@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 
 #include "psim/logging/scene.hpp"
@@ -14,9 +16,25 @@
 
 namespace psim {
 
+inline constexpr SimTime kDefaultTimeAlignHorizon{500'000'000};  // 0.5 s
+
 struct RunOptions {
   ISnapshotSink* sink{nullptr};  // receives one snapshot per tick; not owned
   VehicleParams vehicle;
+  // How far back the EKF can rewind for late messages; zero turns the TimeAlignBuffer off.
+  SimTime ekf_time_align_horizon{kDefaultTimeAlignHorizon};
+};
+
+// How consistent the estimator was with itself (NIS, covariance) and with the truth (NEES).
+struct ConsistencySummary {
+  std::size_t nis_count{0};            // scalar updates of the filter
+  double mean_nis{0.0};                // about 1 for a consistent filter without outliers
+  double median_nis{0.0};              // about 0.455; robust against rejected outliers
+  double fraction_nis_inside_95{1.0};  // about 0.95 for a consistent filter
+  double mean_nees{
+      std::numeric_limits<double>::quiet_NaN()};  // [x, y, yaw, v]: about 4; NaN without
+                                                  // a covariance, skips the first 2 s
+  bool covariance_sane{true};  // symmetric, positive definite and bounded at every tick
 };
 
 struct RunSummary {
@@ -25,6 +43,7 @@ struct RunSummary {
   Pose2D final_truth;
   double final_speed{0.0};
   EstimatedState final_estimate;
+  ConsistencySummary consistency;
 };
 
 // Runs a scenario headless from t = 0 to the scenario duration, in the tick order of

@@ -48,7 +48,7 @@ const std::vector<std::string>& CsvSink::columns() {
   static const std::vector<std::string> names{
       "t_s",     "truth_x", "truth_y", "truth_yaw", "truth_v",   "truth_steer", "est_x",
       "est_y",   "est_yaw", "est_v",   "p_x",       "p_y",       "p_yaw",       "p_v",
-      "pos_err", "yaw_err", "v_err",   "cmd_steer", "cmd_accel", "cmd_gear",    "min_uss"};
+      "pos_err", "yaw_err", "v_err",   "cmd_steer", "cmd_accel", "cmd_gear",    "min_uss", "nis"};
   return names;
 }
 
@@ -82,6 +82,10 @@ void CsvSink::on_snapshot(const Snapshot& s) {
        << ',' << s.cmd.steer_angle << ',' << s.cmd.accel << ',' << gear_name(s.cmd.gear) << ',';
   if (const std::optional<double> nearest = min_range(s.uss); nearest.has_value()) {
     out_ << nearest.value_or(0.0);
+  }
+  out_ << ',';
+  if (s.nis.has_value()) {
+    out_ << s.nis.value_or(0.0);
   }
   out_ << '\n';
   ++rows_;

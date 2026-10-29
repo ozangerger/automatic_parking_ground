@@ -19,6 +19,7 @@ namespace psim {
 //   pos_err yaw_err v_err              estimate minus truth (position error is the distance)
 //   cmd_steer cmd_accel cmd_gear       command of this tick (gear as a name)
 //   min_uss                            shortest ultrasonic range of this tick, empty without echo
+//   nis                                mean NIS of the estimator's updates in this tick, empty without
 class CsvSink final : public ISnapshotSink {
  public:
   // Creates missing parent directories. Throws std::runtime_error when the file cannot be opened.

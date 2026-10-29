@@ -44,6 +44,11 @@ struct UssMsg {
 
 using SensorMsg = std::variant<WheelOdomMsg, ImuMsg, SteerMsg, UssMsg>;
 
+// The time a sensor message was sampled.
+[[nodiscard]] inline SimTime stamp_of(const SensorMsg& msg) {
+  return std::visit([](const auto& m) { return m.stamp; }, msg);
+}
+
 // A sensor message together with the time it leaves the sensor (stamp + sensor latency).
 struct TimedSensorMsg {
   SimTime available_at{};

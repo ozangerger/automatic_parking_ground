@@ -6,6 +6,7 @@
 
 #include "psim/msgs/math.hpp"
 #include "psim/msgs/messages.hpp"
+#include "psim/msgs/mounts.hpp"
 #include "psim/msgs/types.hpp"
 #include "psim/sensors/sensor_base.hpp"
 #include "psim/sensors/truth.hpp"
@@ -13,13 +14,6 @@
 #include "psim/world/map.hpp"
 
 namespace psim {
-
-// Mounting position and boresight direction in the vehicle frame (x forward from the rear axle).
-struct UssMount {
-  double x{0.0};
-  double y{0.0};
-  double heading{0.0};  // rad, relative to the vehicle x axis
-};
 
 // The 12-sensor layout of PLAN.md section 7.4, indexed 0..11:
 //   0-3 front (y = -0.8, -0.3, 0.3, 0.8), 4-7 rear (same y), 8-9 left (front, rear),
@@ -39,6 +33,11 @@ struct UltrasonicParams {
   int rays{3};           // rays across the beam; the shortest hit counts
   double dropout{0.02};  // probability of a missing echo
   double outlier{0.01};  // probability of a random range in [min_range, max_range]
+  // A burst of outliers (scenario S4): inside [burst_start, burst_start + burst_duration) the
+  // outlier probability is burst_outlier instead. A zero duration means no burst.
+  SimTime burst_start{};
+  SimTime burst_duration{};
+  double burst_outlier{0.5};
   SimTime latency{};
 };
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)

@@ -24,6 +24,7 @@ struct Snapshot {
   double truth_v{0.0};
   double truth_steer{0.0};
   EstimatedState est;
+  std::optional<double> nis;  // mean NIS of the estimator's updates since the previous snapshot
   std::vector<UssRay> uss;
   Path planned_path;
   Pose2D slot_pose;

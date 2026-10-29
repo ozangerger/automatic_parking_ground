@@ -217,6 +217,43 @@ TEST(UltrasonicArray, OutliersAreUniformOverTheWholeRange) {
   EXPECT_GT(hi, 3.85);
 }
 
+TEST(UltrasonicArray, ABurstRaisesTheOutlierRateOnlyInsideItsWindow) {
+  UltrasonicParams params = perfect();
+  params.burst_start = SimTime{2'000'000'000};
+  params.burst_duration = SimTime{1'000'000'000};
+  params.burst_outlier = 1.0;
+  const Map map = wall_at_x(6.55);  // true range 3.0 m for the front sensors
+  UltrasonicArray uss{map, params, 8};
+
+  const auto fraction_wrong = [&](double seconds) {
+    int wrong = 0;
+    constexpr int kSamples = 4000;
+    for (int i = 0; i < kSamples; ++i) {
+      const double range = range_of(uss.sample(truth_at(seconds), 0)).value_or(-1.0);
+      if (std::abs(range - 3.0) > 0.01) {
+        ++wrong;
+      }
+    }
+    return static_cast<double>(wrong) / kSamples;
+  };
+  EXPECT_NEAR(fraction_wrong(1.99), 0.0, 1e-12);   // just before the burst
+  EXPECT_GT(fraction_wrong(2.0), 0.99);            // first instant of the burst
+  EXPECT_GT(fraction_wrong(2.99), 0.99);           // last instant before the end
+  EXPECT_NEAR(fraction_wrong(3.0), 0.0, 1e-12);    // the window is half-open
+}
+
+TEST(UltrasonicArray, NoBurstWithAZeroDuration) {
+  UltrasonicParams params = perfect();
+  params.burst_start = SimTime{0};
+  params.burst_duration = SimTime{0};
+  params.burst_outlier = 1.0;
+  const Map map = wall_at_x(6.55);
+  UltrasonicArray uss{map, params, 9};
+  for (int i = 0; i < 500; ++i) {
+    EXPECT_NEAR(range_of(uss.sample(truth_at(0.0), 0)).value_or(-1.0), 3.0, 1e-9);
+  }
+}
+
 TEST(UltrasonicArray, OutliersAlsoAppearWithoutAnyTarget) {
   UltrasonicParams params = perfect();
   params.outlier = 0.5;

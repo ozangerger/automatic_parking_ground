@@ -91,6 +91,13 @@ int main(int argc, char** argv) {
               << " v=" << est.x(3) << '\n'
               << "  position error " << std::hypot(est.x(0) - truth.x, est.x(1) - truth.y) << " m\n"
               << "  wrote " << (out_dir / "run.csv").string() << " and scene.json\n";
+    const psim::ConsistencySummary& c = summary.consistency;
+    if (c.nis_count > 0) {
+      std::cout << "  consistency: " << c.nis_count << " updates, median NIS " << c.median_nis << ", "
+                << 100.0 * c.fraction_nis_inside_95 << " % inside the 95 % bound, mean NEES "
+                << c.mean_nees << ", covariance " << (c.covariance_sane ? "sane" : "NOT SANE")
+                << '\n';
+    }
     return 0;
   } catch (const std::exception& e) {
     std::cerr << "sim_main: " << e.what() << '\n';
