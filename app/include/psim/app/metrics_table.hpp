@@ -49,6 +49,11 @@ struct RunRecord {
 [[nodiscard]] std::string format_table(const std::vector<RunRecord>& records,
                                        const std::optional<AcceptanceSpec>& acceptance);
 
+// The ride comfort of the maneuver, one row per (controller, estimator, controller state): the mean
+// over the seeds, measured on the truth and on the messages the ECU received ("truth / messages").
+// The window of the smoothing and the definition of the maneuver are in logging/comfort.hpp.
+[[nodiscard]] std::string format_comfort_table(const std::vector<RunRecord>& records);
+
 // One line per run, with a header, for spreadsheets and plotting.
 [[nodiscard]] std::string format_csv(const std::vector<RunRecord>& records);
 

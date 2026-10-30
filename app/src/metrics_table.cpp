@@ -207,6 +207,74 @@ std::string format_table(const std::vector<RunRecord>& records,
   return out.str();
 }
 
+namespace {
+
+// One quantity measured twice: on the truth and on the messages.
+struct StatPair {
+  Stat truth;
+  Stat messages;
+
+  void add(double truth_value, double message_value) {
+    truth.add(truth_value);
+    messages.add(message_value);
+  }
+};
+
+struct ComfortGroup {
+  std::size_t runs{0};
+  Stat duration;
+  StatPair accel_max;
+  StatPair accel_rms;
+  StatPair jerk_max;
+  StatPair jerk_rms;
+  StatPair speed_rms;
+};
+
+std::string pair_cell(const StatPair& stats, int precision) {
+  return number(stats.truth.mean(), precision) + " / " + number(stats.messages.mean(), precision);
+}
+
+}  // namespace
+
+std::string format_comfort_table(const std::vector<RunRecord>& records) {
+  constexpr int kPrecision = 3;
+  std::map<std::tuple<int, int, int>, ComfortGroup> groups;
+  for (const RunRecord& r : records) {
+    ComfortGroup& g = groups[{static_cast<int>(r.controller), static_cast<int>(r.estimator),
+                              static_cast<int>(r.controller_state)}];
+    ++g.runs;
+    const ComfortMetrics& t = r.metrics.comfort.truth;
+    const ComfortMetrics& m = r.metrics.comfort.messages;
+    g.duration.add(t.duration);
+    g.accel_max.add(t.max_lateral_accel, m.max_lateral_accel);
+    g.accel_rms.add(t.rms_lateral_accel, m.rms_lateral_accel);
+    g.jerk_max.add(t.max_lateral_jerk, m.max_lateral_jerk);
+    g.jerk_rms.add(t.rms_lateral_jerk, m.rms_lateral_jerk);
+    g.speed_rms.add(t.rms_speed, m.rms_speed);
+  }
+
+  std::ostringstream out;
+  out << "| controller | estimator | controller state | runs | maneuver (s) | max lateral accel "
+         "(m/s²) | rms lateral accel (m/s²) | max lateral jerk (m/s³) | rms lateral jerk (m/s³) | "
+         "rms speed (m/s) |\n";
+  out << "|---|---|---|---|---|---|---|---|---|---|\n";
+  for (const auto& [key, g] : groups) {
+    out << "| " << name_of(static_cast<ControllerKind>(std::get<0>(key))) << " | "
+        << name_of(static_cast<EstimatorKind>(std::get<1>(key))) << " | "
+        << name_of(static_cast<StateSource>(std::get<2>(key))) << " | " << g.runs << " | "
+        << number(g.duration.mean(), 1) << " | " << pair_cell(g.accel_max, kPrecision) << " | "
+        << pair_cell(g.accel_rms, kPrecision) << " | " << pair_cell(g.jerk_max, kPrecision) << " | "
+        << pair_cell(g.jerk_rms, kPrecision) << " | " << pair_cell(g.speed_rms, kPrecision)
+        << " |\n";
+  }
+  out << "\nMean over the seeds, \"truth / messages\". The maneuver runs from the first gear "
+         "command "
+         "other than Park to the next Park command (Done or Abort). Lateral accel and jerk are "
+         "smoothed over a 0.3 s window; the messages give them as odometry speed times IMU yaw "
+         "rate.\n";
+  return out.str();
+}
+
 std::string format_csv(const std::vector<RunRecord>& records) {
   std::ostringstream out;
   out.imbue(std::locale::classic());
@@ -214,7 +282,10 @@ std::string format_csv(const std::vector<RunRecord>& records) {
   out << "controller,estimator,controller_state,seed,maneuver,plan,passed,collided,lateral_m,"
          "longitudinal_m,"
          "yaw_error_deg,rms_cross_track_m,max_cross_track_m,min_clearance_m,settled_s,"
-         "steering_travel_rad,max_lateral_accel,estimate_rmse_position_m,estimate_rmse_yaw_deg\n";
+         "steering_travel_rad,max_lateral_accel,estimate_rmse_position_m,estimate_rmse_yaw_deg,"
+         "maneuver_s,truth_max_lat_accel,truth_rms_lat_accel,truth_max_lat_jerk,truth_rms_lat_jerk,"
+         "truth_rms_speed,msg_max_lat_accel,msg_rms_lat_accel,msg_max_lat_jerk,msg_rms_lat_jerk,"
+         "msg_rms_speed\n";
   for (const RunRecord& r : records) {
     const RunMetrics& m = r.metrics;
     out << name_of(r.controller) << ',' << name_of(r.estimator) << ','
@@ -224,7 +295,12 @@ std::string format_csv(const std::vector<RunRecord>& records) {
         << m.final_longitudinal << ',' << m.final_yaw_error * kRadToDeg << ',' << m.rms_cross_track
         << ',' << m.max_cross_track << ',' << m.min_clearance << ',' << m.settled_time << ','
         << m.steering_travel << ',' << m.max_lateral_accel << ',' << m.estimate_rmse_position << ','
-        << m.estimate_rmse_yaw * kRadToDeg << '\n';
+        << m.estimate_rmse_yaw * kRadToDeg << ',' << m.comfort.truth.duration << ','
+        << m.comfort.truth.max_lateral_accel << ',' << m.comfort.truth.rms_lateral_accel << ','
+        << m.comfort.truth.max_lateral_jerk << ',' << m.comfort.truth.rms_lateral_jerk << ','
+        << m.comfort.truth.rms_speed << ',' << m.comfort.messages.max_lateral_accel << ','
+        << m.comfort.messages.rms_lateral_accel << ',' << m.comfort.messages.max_lateral_jerk << ','
+        << m.comfort.messages.rms_lateral_jerk << ',' << m.comfort.messages.rms_speed << '\n';
   }
   return out.str();
 }

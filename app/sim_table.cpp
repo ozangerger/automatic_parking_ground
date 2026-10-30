@@ -120,8 +120,11 @@ int main(int argc, char** argv) {
     const std::string table = psim::format_table(records, scenario.acceptance);
     write_file(out_dir / "table.md", "# " + scenario.name + "\n\n" + table);
     write_file(out_dir / "runs.csv", psim::format_csv(records));
+    write_file(out_dir / "comfort.md",
+               "# " + scenario.name + ": ride comfort\n\n" + psim::format_comfort_table(records));
     std::cout << "# " << scenario.name << " (" << records.size() << " runs)\n\n"
-              << table << "\nwrote " << (out_dir / "table.md").string() << " and runs.csv\n";
+              << table << "\nwrote " << (out_dir / "table.md").string()
+              << ", comfort.md and runs.csv\n";
     return 0;
   } catch (const std::exception& e) {
     std::cerr << "sim_table: " << e.what() << '\n';

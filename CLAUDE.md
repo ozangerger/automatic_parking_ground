@@ -128,6 +128,15 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
   [--estimators ekf,dead_reckoning] [--states estimate,truth] [--controllers pure_pursuit,stanley,kanayama]
   [--out DIR]` runs every combination over the seeds and writes `out/<scenario>/table.md` (mean / worst per
   controller, estimator and state source) and `runs.csv`.
+- Ride comfort (`logging/comfort.hpp`, `comfort_recorder.hpp`; `RunMetrics::comfort`, `sim_table` writes `comfort.md`, `runs.csv` has
+  the columns): lateral acceleration and jerk (max and rms) and the rms speed of the maneuver, measured twice with the same
+  function and window: on the truth, and on the messages the ECU received (`Snapshot::ecu_messages`; lateral accel = odometry speed
+  x IMU yaw rate, because `accel_y` has a noise of 0.05 m/s^2, as large as the signal at parking speed). The maneuver is idle to idle:
+  from the first gear command other than Park to the next Park (Done or Abort). Acceleration = mean over a 0.3 s window, jerk =
+  difference of the means of the two half windows over the time between their centers (white noise drops with the window; a jerk
+  spike shorter than 0.15 s is averaged out). Speed from the ticks uses 0.2 s windows (one tick is 1 m/s per 50 Hz interval).
+  S3 values: max lateral accel 0.077 m/s^2, max lateral jerk 0.10 m/s^3, rms speed 0.596 m/s; the messages read the jerk about 30 %
+  high (quantized speed) and, in S4, the speed 2.6 % low (the 3 % wheel error). Longitudinal and command-based metrics are not built yet.
 - `S3_perpendicular_estimate`: S2 with the controller on the EKF estimate. `S4_perpendicular_degraded`: S3 with
   3 % wheel scale error, 0.01 rad/s gyro bias, 10 % ultrasonic dropouts and a 1.5 s outlier burst at 14 s
   (no acceptance limits: it reports metrics). `S4_lot_drive_by` stays the open-loop checkpoint-2 scenario.

@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <string>
+#include <variant>
 
 #include "psim/app/sim_runner.hpp"
 #include "psim/sim_core/scenario_loader.hpp"
@@ -59,6 +60,36 @@ TEST(SimRunner, CommandsReachTheCarAfterTheActuatorDelay) {
     }
   }
   EXPECT_GT(sink.snapshots[20].truth_v, 0.0);  // 200 ms
+}
+
+TEST(SimRunner, SnapshotsCarryTheTruthAccelerationsOfThePlant) {
+  // Constant steering and speed: the lateral acceleration is v * yaw rate = v^2 tan(delta) / L.
+  const Scenario s = scenario(std::string(kQuiet) + R"(, "open_loop": [
+      {"t_s": 0, "gear": "Drive", "accel": 1.0, "steer": 0.2},
+      {"t_s": 1.0, "gear": "Drive", "accel": 0.0, "steer": 0.2}])",
+                              4.0);
+  const Recording sink = run_recorded(s);
+  const Snapshot& late = sink.snapshots.back();
+  ASSERT_GT(late.truth_v, 0.5);
+  EXPECT_NEAR(late.truth_yaw_rate, late.truth_v * std::tan(late.truth_steer) / 2.7, 1e-9);
+  EXPECT_NEAR(late.truth_lateral_accel, late.truth_v * late.truth_yaw_rate, 1e-9);
+  EXPECT_NEAR(late.truth_accel, 0.0, 1e-4);        // the 0.2 s lag has not quite died out
+  EXPECT_GT(sink.snapshots[50].truth_accel, 0.1);  // while accelerating (0.5 s)
+}
+
+TEST(SimRunner, SnapshotsCarryTheMessagesTheEcuReceivedInThatTick) {
+  const Recording sink = run_recorded(scenario(kQuiet, 2.0));
+  std::size_t imu = 0;
+  std::size_t odometry = 0;
+  for (const Snapshot& snap : sink.snapshots) {
+    for (const SensorMsg& msg : snap.ecu_messages) {
+      EXPECT_LE(stamp_of(msg).count(), snap.t.count());  // delivered at or after it was sampled
+      imu += std::holds_alternative<ImuMsg>(msg) ? 1U : 0U;
+      odometry += std::holds_alternative<WheelOdomMsg>(msg) ? 1U : 0U;
+    }
+  }
+  EXPECT_NEAR(static_cast<double>(imu), 200.0, 2.0);       // 100 Hz for 2 s
+  EXPECT_NEAR(static_cast<double>(odometry), 100.0, 2.0);  // 50 Hz
 }
 
 TEST(SimRunner, SnapshotPairsTruthAndEstimateOfTheSameInstant) {

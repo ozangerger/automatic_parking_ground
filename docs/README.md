@@ -285,6 +285,39 @@ frame, maximum and RMS distance from the path, steering travel, minimum clearanc
 
 ---
 
+# Ride comfort
+
+Precision is not the only thing a maneuver is judged by. `MetricsSink` also reports how the maneuver
+*feels* and how fast it is, in `RunMetrics::comfort`, in the `comfort.md` that `sim_table` writes next to
+`table.md`, and in `runs.csv`.
+
+| Metric | Meaning |
+|---|---|
+| maneuver time | idle to idle: from the first gear command other than Park to the next Park command (Done or Abort) |
+| max and rms lateral acceleration | m/s², of the smoothed signal, over the maneuver |
+| max and rms lateral jerk | m/s³, the rate of change of the lateral acceleration |
+| rms speed | m/s, root mean square of \|v\| over the maneuver (standing before and after it does not count) |
+
+**Smoothing.** The acceleration is the mean over a 0.3 s window around each sample. The jerk is the
+difference of the means of the two half windows divided by the time between their centers, which
+averages down the noise (for white noise of 0.003 m/s² at 100 Hz the jerk noise is about 0.007 m/s³
+instead of 0.4) and averages out jerk spikes shorter than 0.15 s.
+
+**Two measurements.** Every number is computed twice with the same function, window and maneuver:
+- *truth*: the vehicle's true lateral acceleration and speed, what the occupant feels;
+- *messages*: only the IMU and wheel odometry messages the ECU received (latency, jitter and drops
+  included). Lateral acceleration is odometry speed times IMU yaw rate: the IMU's own `accel_y` has a
+  noise of 0.05 m/s², as large as the signal at parking speed. Speed comes from rear wheel ticks over
+  0.2 s windows. This is what a real vehicle log would give, and the difference to the truth is the effect of the sensors.
+
+`comfort.md` shows "truth / messages" per cell. S3, EKF, 20 seeds: max lateral acceleration 0.077 / 0.078 m/s²,
+max lateral jerk 0.104 / 0.113 m/s³, rms jerk 0.015 / 0.020 m/s³, rms speed 0.596 / 0.598 m/s. The three
+steering laws differ by less than 0.005 m/s³ in the rms jerk: at 0.6 m/s the steering rate limit keeps lateral jerk small whatever the law, so the
+lateral numbers are set by the planner (arc radius, speeds). In S4 the messages read the speed 2.6 % low (the 3 % wheel scale error).
+
+**Not built yet:** longitudinal acceleration and jerk (probably the dominant comfort cost: start and stop on the
+actuator's 0.2 s lag), command-based metrics from `VehicleCmd`, comfort limits in a scenario's `acceptance`.
+
 # TODO
 
 - LQR (speed-scheduled gains on the linearized error model) and MPC (kinematic bicycle with the actuator

@@ -177,6 +177,75 @@ TEST(Acceptance, WithoutAFinalPoseNothingPasses) {
   EXPECT_FALSE(meets(RunMetrics{}, AcceptanceSpec{1.0, 1.0, 90.0}));
 }
 
+// ---- ride comfort
+// ---------------------------------------------------------------------------------
+
+TEST(Comfort, TheMessagesAgreeWithTheTruthOnAParkingManeuverWithPerfectSensors) {
+  Scenario scenario = lot();
+  scenario.duration = from_seconds(30.0);
+  scenario.noise.enabled = false;
+  scenario.algorithms.estimator = EstimatorKind::Ekf;
+  scenario.algorithms.planner = PlannerKind::Perpendicular;
+  scenario.slot = SlotSpec{Pose2D{-1.0, -8.0, 1.5707963267948966}, 2.6, 5.5};
+  scenario.obstacles.clear();
+  scenario.start_pose = Pose2D{};
+  BatchOptions options;
+  options.seeds = 1;
+  options.estimators = {EstimatorKind::Ekf};
+  const std::vector<RunRecord> records = run_batch(scenario, options);
+  const ComfortReport& c = records.front().metrics.comfort;
+
+  EXPECT_TRUE(c.truth.finished);
+  EXPECT_GT(c.truth.duration, 15.0);
+  EXPECT_LT(c.truth.duration, 30.0);
+  EXPECT_NEAR(c.messages.duration, c.truth.duration, 0.05);  // the same window: the commands
+  EXPECT_NEAR(c.messages.max_lateral_accel, c.truth.max_lateral_accel, 0.01);
+  EXPECT_NEAR(c.messages.rms_lateral_accel, c.truth.rms_lateral_accel, 0.005);
+  EXPECT_NEAR(c.messages.rms_speed, c.truth.rms_speed, 0.01);
+  EXPECT_NEAR(c.messages.rms_lateral_jerk, c.truth.rms_lateral_jerk, 0.01);
+  // The planner limits lateral acceleration to 1 m/s^2 and drives the arc at 0.6 m/s on a 5.3 m
+  // radius.
+  EXPECT_LT(c.truth.max_lateral_accel, 0.1);
+  EXPECT_GT(c.truth.max_lateral_accel, 0.04);
+}
+
+TEST(Comfort, AWheelScaleErrorShowsInTheSpeedOfTheMessagesButNotInTheTruth) {
+  Scenario scenario =
+      load_scenario(std::string{PSIM_SCENARIO_DIR} + "/S4_perpendicular_degraded.json");
+  BatchOptions options;
+  options.seeds = 1;
+  options.estimators = {EstimatorKind::Ekf};
+  const ComfortReport c = run_batch(scenario, options).front().metrics.comfort;
+  // S4: the wheels are 3 % off, so the ticks give a speed 3 % too low (measured: 2.6 %).
+  EXPECT_NEAR(c.messages.rms_speed / c.truth.rms_speed, 0.97, 0.015);
+  EXPECT_NEAR(c.messages.max_lateral_accel, c.truth.max_lateral_accel, 0.01);
+}
+
+TEST(Comfort, AnOpenLoopScenarioWithoutAManeuverHasNone) {
+  const std::vector<RunRecord> records = run_batch(lot(), [] {
+    BatchOptions options;
+    options.seeds = 1;
+    options.estimators = {EstimatorKind::Ekf};
+    return options;
+  }());
+  EXPECT_TRUE(std::isnan(records.front().metrics.comfort.truth.duration));
+}
+
+TEST(Comfort, TheTableAndTheCsvListBothSources) {
+  Scenario scenario = lot();
+  BatchOptions options;
+  options.seeds = 1;
+  options.estimators = {EstimatorKind::Ekf};
+  const std::vector<RunRecord> records = run_batch(scenario, options);
+  const std::string table = format_comfort_table(records);
+  EXPECT_NE(table.find("max lateral jerk (m/s³)"), std::string::npos);
+  EXPECT_NE(table.find("truth / messages"), std::string::npos);
+  EXPECT_NE(table.find("| pure_pursuit | ekf | estimate | 1 |"), std::string::npos) << table;
+  const std::string csv = format_csv(records);
+  EXPECT_NE(csv.find("maneuver_s,truth_max_lat_accel"), std::string::npos);
+  EXPECT_NE(csv.find("msg_rms_speed\n"), std::string::npos);
+}
+
 // ---- batch and table ----------------------------------------------------------------------------
 
 Scenario quiet_parking() {

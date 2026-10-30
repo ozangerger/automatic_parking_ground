@@ -146,6 +146,9 @@ hardcoded path, or a planner. A closed-loop scenario can carry `acceptance` limi
   distance to the path the controller was given, clearance and collision, settling time, steering
   travel, maximum lateral acceleration, estimate RMSE. `meets(metrics, AcceptanceSpec)` decides pass or
   fail.
+- **`ComfortRecorder`** (`logging`, inside `MetricsSink`) measures the ride comfort twice, on the truth and on the messages the ECU received. For that
+  the `Snapshot` also carries the truth accelerations and yaw rate and `ecu_messages`, the sensor messages delivered to the ECU in that tick
+  (a tap in `deliver_sensor_messages`, only when a sink is attached).
 - **`sim_table`** runs a scenario over seeds × controllers × estimators × state sources and writes
   `table.md` and `runs.csv`.
 - **`tools/plot.py`** draws the trajectory (truth, estimate, planned path), error panels, NIS and, for

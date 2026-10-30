@@ -68,6 +68,17 @@ void print_metrics(const psim::RunMetrics& m, const std::optional<psim::Acceptan
             << kCentimeters * m.max_cross_track << " cm; min clearance "
             << kCentimeters * m.min_clearance << " cm" << (m.collided ? " (COLLISION)" : "")
             << "; settled after " << m.settled_time << " s\n";
+  const psim::ComfortMetrics& t = m.comfort.truth;
+  const psim::ComfortMetrics& g = m.comfort.messages;
+  if (std::isfinite(t.duration)) {
+    std::cout << "  comfort over the maneuver (" << t.duration << " s"
+              << (t.finished ? "" : ", not finished") << "), truth / messages:\n"
+              << "    lateral accel   max " << t.max_lateral_accel << " / " << g.max_lateral_accel
+              << ", rms " << t.rms_lateral_accel << " / " << g.rms_lateral_accel << " m/s^2\n"
+              << "    lateral jerk    max " << t.max_lateral_jerk << " / " << g.max_lateral_jerk
+              << ", rms " << t.rms_lateral_jerk << " / " << g.rms_lateral_jerk << " m/s^3\n"
+              << "    speed           rms " << t.rms_speed << " / " << g.rms_speed << " m/s\n";
+  }
   if (limits.has_value()) {
     const bool parked = maneuver == psim::ManeuverState::Done;
     std::cout << "  acceptance (" << kCentimeters * limits->lateral << " cm, "

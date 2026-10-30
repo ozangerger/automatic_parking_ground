@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "psim/geometry/polygon.hpp"
+#include "psim/logging/comfort_recorder.hpp"
 #include "psim/msgs/interfaces.hpp"
 #include "psim/plant/vehicle_params.hpp"
 #include "psim/sim_core/scenario.hpp"
@@ -33,6 +34,10 @@ struct RunMetrics {
   double settled_time{0.0};       // s: when the vehicle last moved faster than 2 cm/s
   double steering_travel{0.0};    // rad: sum of the changes of the steering angle
   double max_lateral_accel{0.0};  // m/s^2: v^2 |tan(steer)| / wheelbase
+
+  // Ride comfort of the maneuver, idle to idle (see logging/comfort_recorder.hpp): on the truth and
+  // on the IMU and odometry messages the ECU received.
+  ComfortReport comfort;
 
   // The estimate against the truth, after the first second.
   double estimate_rmse_position{kNaN};  // m
@@ -64,6 +69,7 @@ class MetricsSink final : public ISnapshotSink {
   double settled_time_{0.0};
   double steering_travel_{0.0};
   double max_lateral_accel_{0.0};
+  ComfortRecorder comfort_;
   double position_sq_{0.0};
   double yaw_sq_{0.0};
   std::size_t estimate_count_{0};

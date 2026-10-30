@@ -276,7 +276,11 @@ class Simulation {
   }
 
   void deliver_sensor_messages(SimTime t) {
+    tick_messages_.clear();
     for (const SensorMsg& msg : sensor_bus_.pop_due(t)) {
+      if (sink_ != nullptr) {
+        tick_messages_.push_back(msg);  // for the snapshot: what the ECU received this tick
+      }
       estimator_->on_message(msg);
       if (const auto* uss = std::get_if<UssMsg>(&msg)) {
         latest_uss_.at(uss->id) = *uss;
@@ -321,6 +325,9 @@ class Simulation {
     snapshot.truth = now.pose;
     snapshot.truth_v = now.v;
     snapshot.truth_steer = now.steer_angle;
+    snapshot.truth_accel = now.accel;
+    snapshot.truth_yaw_rate = now.yaw_rate;
+    snapshot.truth_lateral_accel = now.lateral_accel;
     snapshot.est = estimator_->estimate();
     if (!tick_nis_.empty()) {
       double sum = 0.0;
@@ -337,6 +344,8 @@ class Simulation {
     }
     snapshot.planned_path = path_;
     snapshot.cmd = last_cmd_;
+    snapshot.ecu_messages = std::move(tick_messages_);
+    tick_messages_.clear();
     sink_->on_snapshot(snapshot);
   }
 
@@ -372,6 +381,7 @@ class Simulation {
 
   ConsistencyMonitor nis_monitor_;
   std::vector<double> tick_nis_;
+  std::vector<SensorMsg> tick_messages_;  // delivered to the ECU in this tick (with a sink)
   double nees_sum_{0.0};
   std::size_t nees_count_{0};
   bool covariance_sane_{true};

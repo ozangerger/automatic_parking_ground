@@ -70,6 +70,7 @@ void MetricsSink::on_snapshot(const Snapshot& s) {
     yaw_sq_ += std::pow(wrap_angle(s.est.x(2) - s.truth.yaw), 2);
     ++estimate_count_;
   }
+  comfort_.on_snapshot(s);
   last_truth_ = s.truth;
   last_steer_ = s.truth_steer;
   has_last_ = true;
@@ -82,6 +83,7 @@ RunMetrics MetricsSink::metrics() const {
   m.settled_time = settled_time_;
   m.steering_travel = steering_travel_;
   m.max_lateral_accel = max_lateral_accel_;
+  m.comfort = comfort_.report();
   if (cross_track_count_ > 0) {
     m.rms_cross_track = std::sqrt(cross_track_sq_ / static_cast<double>(cross_track_count_));
     m.max_cross_track = max_cross_track_;
