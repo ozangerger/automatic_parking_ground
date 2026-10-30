@@ -148,7 +148,7 @@ hardcoded path, or a planner. A closed-loop scenario can carry `acceptance` limi
   fail.
 - **`ComfortRecorder`** (`logging`, inside `MetricsSink`) measures the ride comfort twice, on the truth and on the messages the ECU received. For that
   the `Snapshot` also carries the truth accelerations and yaw rate and `ecu_messages`, the sensor messages delivered to the ECU in that tick
-  (a tap in `deliver_sensor_messages`, only when a sink is attached).
+  (a tap in `deliver_sensor_messages`, only when a sink is attached). `sim_main` writes the run's `metrics.json` (`app/run_report`) and `sim_table` a `comfort.md`.
 - **`sim_table`** runs a scenario over seeds × controllers × estimators × state sources and writes
   `table.md` and `runs.csv`.
 - **`tools/plot.py`** draws the trajectory (truth, estimate, planned path), error panels, NIS and, for

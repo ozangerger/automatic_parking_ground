@@ -184,6 +184,78 @@ TEST(ComfortRecorder, MessagesOfASnapshotAreUsedLikeDirectOnes) {
   EXPECT_GT(via_snapshots.report().messages.max_lateral_accel, 0.03);  // 0.5 m/s * 0.1 rad/s = 0.05
 }
 
+// A straight drive that speeds up at `accel` for 2 s (from 1 s on), cruises, and brakes at the same
+// rate from 6 s: the messages and the commands of it, in forward or reverse.
+void accelerate_and_brake(ComfortRecorder& recorder, Gear gear, double accel) {
+  const double sign = gear == Gear::Reverse ? -1.0 : 1.0;
+  const double top = accel * 2.0;
+  const auto speed = [&](double t) {
+    if (t < 1.0) {
+      return 0.0;
+    }
+    if (t < 3.0) {
+      return accel * (t - 1.0);
+    }
+    if (t < 6.0) {
+      return top;
+    }
+    return std::max(0.0, top - accel * (t - 6.0));
+  };
+  const auto body_accel = [&](double t) {
+    if (t >= 1.0 && t < 3.0) {
+      return accel;
+    }
+    return t >= 6.0 && t < 8.0 ? -accel : 0.0;
+  };
+  double distance = 0.0;
+  for (int i = 0; i <= 1200; ++i) {
+    const double t = i * 0.01;
+    distance += speed(t) * 0.01;
+    ImuMsg imu;
+    imu.stamp = from_seconds(t);
+    imu.accel_x =
+        sign * body_accel(t);  // the accelerometer reads along the body: negative in reverse
+    recorder.on_message(imu);
+    if (i % 2 == 0) {
+      WheelOdomMsg odometry;
+      odometry.stamp = imu.stamp;
+      odometry.ticks_rl = odometry.ticks_rr =
+          static_cast<std::int64_t>(std::floor(sign * distance / kMetersPerTick));
+      recorder.on_message(odometry);
+    }
+    recorder.on_command(imu.stamp, t >= 0.5 && t < 10.0 ? gear : Gear::Park);
+  }
+}
+
+TEST(ComfortRecorder, TheLongitudinalAccelerationIsAlongTheDirectionOfTravelAlsoInReverse) {
+  for (const Gear gear : {Gear::Drive, Gear::Reverse}) {
+    ComfortRecorder recorder;
+    accelerate_and_brake(recorder, gear, 0.5);
+    const ComfortMetrics m = recorder.report().messages;
+    EXPECT_NEAR(m.max_speedup, 0.5, 0.02) << (gear == Gear::Drive ? "forward" : "reverse");
+    EXPECT_NEAR(m.max_braking, 0.5, 0.02) << (gear == Gear::Drive ? "forward" : "reverse");
+    // The distance: 1 m while speeding up, 3 s at 1 m/s, 1 m braking, within a few ticks.
+    EXPECT_NEAR(m.distance, 1.0 + 3.0 + 1.0, 0.25);
+    EXPECT_NEAR(m.mean_moving_speed, m.distance / m.moving_time, 1e-9);
+  }
+}
+
+TEST(ComfortRecorder, TheTruthSideTurnsTheBodyAccelerationToTheDirectionOfTravel) {
+  ComfortRecorder recorder;
+  for (int i = 0; i <= 500; ++i) {
+    Snapshot s;
+    s.t = from_seconds(0.01 * i);
+    s.cmd.stamp = s.t;
+    s.cmd.gear = i >= 100 && i < 400 ? Gear::Reverse : Gear::Park;
+    s.truth_v = -1.0;      // reversing
+    s.truth_accel = -0.5;  // body x: more negative speed = speeding up in reverse
+    recorder.on_snapshot(s);
+  }
+  const ComfortMetrics t = recorder.report().truth;
+  EXPECT_NEAR(t.max_speedup, 0.5, 1e-9);
+  EXPECT_NEAR(t.max_braking, 0.0, 1e-9);
+}
+
 TEST(ComfortRecorder, RejectsInvalidParameters) {
   ComfortRecorderParams bad;
   bad.wheel_radius = 0.0;

@@ -11,15 +11,21 @@ namespace {
 
 constexpr double kTol = 1e-9;
 
-// Samples every `dt` seconds from 0 to `end`, with a(t) and v(t) given by the callables.
-template <typename A, typename V>
-std::vector<ComfortSample> series(double end, double dt, A accel, V speed) {
+// Samples every `dt` seconds from 0 to `end`, with the lateral acceleration a(t), the speed v(t)
+// and the longitudinal acceleration l(t) given by the callables.
+template <typename A, typename V, typename L>
+std::vector<ComfortSample> series(double end, double dt, A lateral, V speed, L longitudinal) {
   std::vector<ComfortSample> samples;
   for (int i = 0; i * dt <= end + 1e-12; ++i) {
     const double t = i * dt;
-    samples.push_back(ComfortSample{from_seconds(t), accel(t), speed(t)});
+    samples.push_back(ComfortSample{from_seconds(t), lateral(t), longitudinal(t), speed(t)});
   }
   return samples;
+}
+
+template <typename A, typename V>
+std::vector<ComfortSample> series(double end, double dt, A lateral, V speed) {
+  return series(end, dt, lateral, speed, [](double) { return 0.0; });
 }
 
 TEST(Comfort, ConstantAccelerationHasNoJerk) {
@@ -96,7 +102,7 @@ TEST(Comfort, IrregularSamplingGivesTheSameRamp) {
   while (t < 10.0) {
     state = state * 1664525U + 1013904223U;  // an LCG: deterministic spacing from 4 to 14 ms
     t += 0.004 + 0.010 * (static_cast<double>(state >> 8) / 16777216.0);
-    samples.push_back(ComfortSample{from_seconds(t), 0.2 * t, 1.0});
+    samples.push_back(ComfortSample{from_seconds(t), 0.2 * t, 0.0, 1.0});
   }
   const ComfortMetrics m = comfort_metrics(samples, from_seconds(2.0), from_seconds(8.0));
   EXPECT_NEAR(m.max_lateral_jerk, 0.2, 2e-3);
@@ -146,6 +152,64 @@ TEST(Comfort, SamplesInAnyOrderGiveTheSameResult) {
   const ComfortMetrics reversed = comfort_metrics(samples, from_seconds(1.0), from_seconds(5.0));
   EXPECT_NEAR(sorted.max_lateral_jerk, reversed.max_lateral_jerk, kTol);
   EXPECT_NEAR(sorted.rms_lateral_accel, reversed.rms_lateral_accel, kTol);
+}
+
+TEST(Comfort, ALongitudinalRampHasItsSlopeAsJerkAndTheSignSaysSpeedUpOrBraking) {
+  const auto up = series(
+      10.0, 0.01, [](double) { return 0.0; }, [](double) { return 1.0; },
+      [](double t) { return 0.2 * t; });
+  const ComfortMetrics speeding = comfort_metrics(up, from_seconds(2.0), from_seconds(8.0));
+  EXPECT_NEAR(speeding.max_longitudinal_jerk, 0.2, 1e-9);
+  EXPECT_NEAR(speeding.rms_longitudinal_jerk, 0.2, 1e-9);
+  EXPECT_NEAR(speeding.max_speedup, 0.2 * 8.0, 1e-9);
+  EXPECT_NEAR(speeding.max_braking, 0.0, kTol);  // nothing negative
+
+  const auto down = series(
+      10.0, 0.01, [](double) { return 0.0; }, [](double) { return 1.0; },
+      [](double t) { return -0.5 - 0.1 * t; });
+  const ComfortMetrics braking = comfort_metrics(down, from_seconds(2.0), from_seconds(8.0));
+  EXPECT_NEAR(braking.max_braking, 0.5 + 0.1 * 8.0, 1e-9);
+  EXPECT_NEAR(braking.max_speedup, 0.0, kTol);
+  EXPECT_NEAR(braking.max_longitudinal_jerk, 0.1, 1e-9);
+  EXPECT_NEAR(braking.rms_longitudinal_accel,
+              std::sqrt(0.0 + (0.5 + 0.1 * 5.0) * (0.5 + 0.1 * 5.0) + 0.01 * 36.0 / 12.0), 5e-3);
+}
+
+TEST(Comfort, StandingSamplesAreLeftOutOfTheAccelerationAndJerkStatistics) {
+  // One tick of -2.4 m/s^2 at a standstill (the plant stopping a residual speed at a gear change)
+  // would be a raw jerk of hundreds of m/s^3: it must not show.
+  auto samples = series(
+      10.0, 0.01, [](double) { return 0.1; },
+      [](double t) { return t >= 5.0 && t < 5.04 ? 0.0 : 1.0; },
+      [](double t) { return t >= 5.0 && t < 5.01 ? -2.4 : 0.0; });
+  const ComfortMetrics m = comfort_metrics(samples, from_seconds(2.0), from_seconds(8.0));
+  EXPECT_NEAR(m.max_longitudinal_jerk, 0.0, 1e-9);
+  EXPECT_NEAR(m.max_braking, 0.0, 1e-9);
+  EXPECT_NEAR(m.standing_time, 0.04, 0.011);  // but the time standing counts
+  EXPECT_NEAR(m.max_lateral_accel, 0.1, kTol);
+}
+
+TEST(Comfort, ProgressIsTheDistanceAndTheTimeMovingAndStanding) {
+  // Standing for 2 s, then 1 m/s for 4 s inside a 6 s maneuver.
+  const auto samples =
+      series(8.0, 0.01, [](double) { return 0.0; }, [](double t) { return t < 2.0 ? 0.0 : 1.0; });
+  const ComfortMetrics m = comfort_metrics(samples, from_seconds(0.0), from_seconds(6.0));
+  EXPECT_NEAR(m.distance, 4.0, 0.011);
+  EXPECT_NEAR(m.moving_time, 4.0, 0.011);
+  EXPECT_NEAR(m.standing_time, 2.0, 0.011);
+  EXPECT_NEAR(m.mean_moving_speed, 1.0, 0.003);
+  EXPECT_NEAR(m.rms_speed, std::sqrt(4.0 / 6.0), 0.01);  // standing counts in the rms speed
+}
+
+TEST(Comfort, AManeuverWithoutMovementHasProgressButNoAccelerations) {
+  const auto samples = series(5.0, 0.01, [](double) { return 0.0; }, [](double) { return 0.0; });
+  const ComfortMetrics m = comfort_metrics(samples, from_seconds(1.0), from_seconds(4.0));
+  EXPECT_NEAR(m.distance, 0.0, kTol);
+  EXPECT_NEAR(m.standing_time, 3.0, kTol);
+  EXPECT_NEAR(m.moving_time, 0.0, kTol);
+  EXPECT_NEAR(m.mean_moving_speed, 0.0, kTol);
+  EXPECT_TRUE(std::isnan(m.max_lateral_accel));
+  EXPECT_TRUE(std::isnan(m.max_longitudinal_jerk));
 }
 
 TEST(Comfort, RejectsAWindowThatIsNotPositive) {

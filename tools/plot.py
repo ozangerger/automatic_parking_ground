@@ -24,6 +24,13 @@ Three runs can be compared in a closed-loop scenario, for example the three stee
     python3 tools/plot.py out/S3_perpendicular_estimate/ekf out/S3_perpendicular_estimate/ekf_stanley \\
         out/S3_perpendicular_estimate/ekf_kanayama --label "pure pursuit" --label Stanley --label Kanayama
 
+Ride comfort: when a RUN_DIR holds metrics.json (written by sim_main), the figure shows the numbers of the
+maneuver under the title, and `--comfort` draws a second figure instead: the speed, the longitudinal and the
+lateral acceleration and their jerk (truth, smoothed over the 0.3 s window of the metrics; standing samples
+left out), with the maneuver shaded. Needs the truth_accel and truth_lat_accel columns of run.csv.
+
+    python3 tools/plot.py out/S3_perpendicular_estimate/ekf --comfort -o out/S3_perpendicular_estimate/comfort.png
+
 Conventions match the simulator: SI units, x forward/east, y left/north, yaw counter-clockwise.
 Matplotlib axes already have y pointing up, so world coordinates are plotted unchanged; the one
 place where a frame changes is `car_in_world`.
@@ -302,6 +309,65 @@ def rms(values):
     return math.sqrt(float(np.mean(values ** 2))) if len(values) else math.nan
 
 
+COMFORT_WINDOW = 0.3   # s, as ComfortParams::window
+MOVING_SPEED = 0.05    # m/s, as ComfortParams::moving_speed
+
+
+def load_metrics(run_dir):
+    """The metrics.json of a run, or None."""
+    path = run_dir / "metrics.json"
+    if not path.exists():
+        return None
+    with open(path) as handle:
+        return json.load(handle)
+
+
+def comfort_series(t, value, speed, window=COMFORT_WINDOW, moving=MOVING_SPEED):
+    """Smoothed value and jerk on the time grid of the run, NaN where the vehicle stands.
+
+    The same estimator as logging/comfort.cpp: the value is the mean over +-window/2 of the moving
+    samples, the jerk the difference of the means of the two halves over the time between their
+    centers (each half needs two samples)."""
+    mask = np.abs(speed) > moving
+    tm, vm = t[mask], value[mask]
+    smooth = np.full(len(t), np.nan)
+    jerk = np.full(len(t), np.nan)
+    if len(tm) == 0:
+        return smooth, jerk
+    half = window / 2.0
+    cum_t = np.concatenate([[0.0], np.cumsum(tm - tm[0])])
+    cum_v = np.concatenate([[0.0], np.cumsum(vm)])
+    index = np.arange(len(tm))
+    lo = np.searchsorted(tm, tm - half, side="left")
+    hi = np.searchsorted(tm, tm + half, side="right")
+    s = (cum_v[hi] - cum_v[lo]) / (hi - lo)
+    ok = ((index - lo) >= 2) & ((hi - index) >= 2)
+    back = np.maximum(index - lo, 1)
+    fwd = np.maximum(hi - index, 1)
+    num = (cum_v[hi] - cum_v[index]) / fwd - (cum_v[index] - cum_v[lo]) / back
+    den = (cum_t[hi] - cum_t[index]) / fwd - (cum_t[index] - cum_t[lo]) / back
+    j = np.full(len(tm), np.nan)
+    j[ok] = num[ok] / den[ok]
+    smooth[mask] = s
+    jerk[mask] = j
+    return smooth, jerk
+
+
+def comfort_text(run):
+    """One line with the maneuver and the comfort numbers of a run (truth), or None."""
+    metrics = run.get("metrics")
+    if not metrics:
+        return None
+    c = metrics["comfort"]["truth"]
+    if c["maneuver_s"] is None:
+        return None
+    lat, lon, prog = c["lateral"], c["longitudinal"], c["progress"]
+    return (f"{run['label']}: maneuver {c['maneuver_s']:.1f} s, {prog['distance_m']:.1f} m, "
+            f"rms speed {prog['rms_speed_mps']:.2f} m/s   |   lateral: max {lat['max_accel_mps2']:.3f} m/s², "
+            f"jerk {lat['max_jerk_mps3']:.2f} m/s³   |   longitudinal: +{lon['max_speedup_mps2']:.2f} / "
+            f"-{lon['max_braking_mps2']:.2f} m/s², jerk {lon['max_jerk_mps3']:.2f} m/s³")
+
+
 def summary_line(runs):
     parts = [f"{run['label']}: {run['data']['pos_err'][-1] * 100:.1f} cm, "
              f"{math.degrees(run['data']['yaw_err'][-1]):+.2f} deg" for run in runs]
@@ -316,8 +382,9 @@ def make_figure(runs, scene, theme, title):
     path = scene.get("path")
     panels = 2 + (1 if has_nis else 0) + (3 if path else 0)
 
+    comfort_lines = [line for line in (comfort_text(run) for run in runs) if line]
     fig = plt.figure(figsize=(12.5, 6.5 if panels <= 3 else 2.1 * panels + 1.0), facecolor=theme["surface"])
-    top = 0.83 if panels <= 3 else 0.90
+    top = (0.83 if panels <= 3 else 0.90) - 0.02 * len(comfort_lines)
     grid = fig.add_gridspec(panels, 2, width_ratios=(1.5, 1.0), hspace=0.75 if path else 0.55,
                             wspace=0.34, left=0.06, right=0.90, top=top, bottom=0.06)
 
@@ -369,6 +436,74 @@ def make_figure(runs, scene, theme, title):
 
     fig.suptitle(title, x=0.06, ha="left", fontsize=13, color=theme["ink"])
     fig.text(0.06, top + 0.025, summary_line(runs), fontsize=9.5, color=theme["ink_secondary"])
+    for k, line in enumerate(comfort_lines):
+        fig.text(0.06, top + 0.045 + 0.02 * k, line, fontsize=9.0, color=theme["ink_secondary"])
+    return fig
+
+
+COMFORT_PANELS = [
+    # (title, y label, what to draw)
+    ("Speed (negative: reversing)", "speed (m/s)", "speed"),
+    ("Longitudinal acceleration along the direction of travel (+ speeding up, - braking)",
+     "m/s²", "long_accel"),
+    ("Longitudinal jerk", "m/s³", "long_jerk"),
+    ("Lateral acceleration", "m/s²", "lat_accel"),
+    ("Lateral jerk", "m/s³", "lat_jerk"),
+]
+
+
+def comfort_data(run):
+    """The series of the comfort figure for a run, on the time grid of its run.csv."""
+    data = run["data"]
+    for needed in ("truth_v", "truth_accel", "truth_lat_accel"):
+        if needed not in data:
+            sys.exit(f"run.csv of '{run['label']}' has no column '{needed}': run sim_main again")
+    t, v = data["t_s"], data["truth_v"]
+    long_accel, long_jerk = comfort_series(t, data["truth_accel"] * np.sign(v), v)
+    lat_accel, lat_jerk = comfort_series(t, data["truth_lat_accel"], v)
+    return {"speed": v, "long_accel": long_accel, "long_jerk": long_jerk,
+            "lat_accel": lat_accel, "lat_jerk": lat_jerk}
+
+
+def make_comfort_figure(runs, theme, title):
+    import matplotlib.pyplot as plt
+
+    lines = [line for line in (comfort_text(run) for run in runs) if line]
+    top = 0.93 - 0.02 * len(lines)
+    fig, axes = plt.subplots(len(COMFORT_PANELS), 1, figsize=(12.5, 11.0), sharex=True,
+                             facecolor=theme["surface"])
+    fig.subplots_adjust(left=0.07, right=0.90, top=top, bottom=0.06, hspace=0.55)
+    series = [comfort_data(run) for run in runs]
+    colors = [theme["truth"]] if len(runs) == 1 else theme["estimates"][:len(runs)]
+    for ax, (panel_title, ylabel, key) in zip(axes, COMFORT_PANELS):
+        style_axes(ax, theme)
+        ends = []
+        for index, run in enumerate(runs):
+            t = run["data"]["t_s"]
+            values = series[index][key]
+            ax.plot(t, values, color=colors[index], linewidth=LINE_WIDTH,
+                    linestyle="-" if len(runs) == 1 else ESTIMATE_DASHES[index], label=run["label"])
+            metrics = run.get("metrics")
+            if metrics and metrics["comfort"]["truth"]["maneuver_s"] is not None:
+                c = metrics["comfort"]["truth"]
+                ax.axvspan(c["start_s"], c["end_s"], color=colors[index], alpha=0.06, linewidth=0)
+            finite = np.isfinite(values)
+            if finite.any():
+                last = np.where(finite)[0][-1]
+                ends.append((values[last], t[last], run["label"]))
+        if key != "speed":
+            ax.axhline(0.0, color=theme["ink_secondary"], linewidth=0.8)
+        ax.set_title(panel_title, loc="left", fontsize=11, color=theme["ink"])
+        ax.set_ylabel(ylabel)
+        if len(runs) > 1:
+            label_line_ends(ax, ends, theme)
+    axes[-1].set_xlabel("time (s)")
+    fig.suptitle(f"{title}: ride comfort", x=0.07, ha="left", fontsize=13, color=theme["ink"])
+    for k, line in enumerate(lines):
+        fig.text(0.07, top + 0.035 + 0.02 * k, line, fontsize=9.0, color=theme["ink_secondary"])
+    fig.text(0.07, 0.015, "truth, smoothed over 0.3 s; samples at or below 0.05 m/s left out; shaded: "
+             "the maneuver (first gear command to the next Park)", fontsize=8.5,
+             color=theme["ink_secondary"])
     return fig
 
 
@@ -377,6 +512,8 @@ def main():
     parser.add_argument("run_dirs", type=Path, nargs="+", help="one to three directories with run.csv")
     parser.add_argument("--label", action="append", default=[], help="legend label of a run (repeatable)")
     parser.add_argument("-o", "--out", type=Path, help="output image (default: first RUN_DIR/plot.png)")
+    parser.add_argument("--comfort", action="store_true",
+                        help="draw the ride comfort figure (acceleration and jerk) instead")
     parser.add_argument("--dark", action="store_true", help="dark theme")
     parser.add_argument("--show", action="store_true", help="open a window instead of only saving")
     args = parser.parse_args()
@@ -399,7 +536,7 @@ def main():
                 sys.exit(f"{run_file}: missing column '{needed}'")
         default_label = "estimate" if len(args.run_dirs) == 1 else run_dir.resolve().name
         label = args.label[index] if index < len(args.label) else default_label
-        runs.append({"label": label, "data": data})
+        runs.append({"label": label, "data": data, "metrics": load_metrics(run_dir)})
 
     scene = load_scene(args.run_dirs[0] / "scene.json")
     if len(runs) > 2 and not scene.get("path"):
@@ -413,7 +550,7 @@ def main():
 
     theme = THEMES["dark" if args.dark else "light"]
     title = scene.get("name") or args.run_dirs[0].resolve().parent.name
-    fig = make_figure(runs, scene, theme, title)
+    fig = make_comfort_figure(runs, theme, title) if args.comfort else make_figure(runs, scene, theme, title)
 
     for run in runs:
         data = run["data"]

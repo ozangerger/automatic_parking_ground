@@ -9,9 +9,9 @@
 
 namespace psim {
 
-// Ride comfort of a maneuver from a series of lateral accelerations and speeds. The series can come
-// from the truth or from what the vehicle interface delivers (see ComfortRecorder), so the numbers
-// of the two are directly comparable: they go through exactly this function.
+// Ride comfort and progress of a maneuver from a series of accelerations and speeds. The series can
+// come from the truth or from what the vehicle interface delivers (see ComfortRecorder), so the
+// numbers of the two are directly comparable: they go through exactly this function.
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers): this table is where the numbers get names.
 struct ComfortParams {
@@ -20,13 +20,18 @@ struct ComfortParams {
   // between their centers (so the noise of a white signal drops with the window and a jerk spike
   // shorter than half a window is averaged out).
   double window{0.3};  // s
+  // At or below this speed the vehicle counts as standing: such samples are left out of the
+  // acceleration and jerk statistics (the plant stops the car within one tick at a gear change or
+  // at the end, a jerk spike nobody feels) and count as standing time.
+  double moving_speed{0.05};  // m/s
 };
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers)
 
 struct ComfortSample {
   SimTime t{};
-  double lateral_accel{0.0};  // m/s^2, along the body y axis
-  double speed{0.0};          // m/s, only the magnitude is used
+  double lateral_accel{0.0};       // m/s^2, along the body y axis
+  double longitudinal_accel{0.0};  // m/s^2 along the direction of travel: > 0 speeds up, < 0 brakes
+  double speed{0.0};               // m/s, only the magnitude is used
 };
 
 struct ComfortMetrics {
@@ -39,14 +44,25 @@ struct ComfortMetrics {
   double duration{kNaN};    // s
   bool finished{false};
 
-  // Over the maneuver, after the smoothing above.
+  // Over the moving part of the maneuver, after the smoothing above.
   double max_lateral_accel{kNaN};  // m/s^2, magnitude
   double rms_lateral_accel{kNaN};
   double max_lateral_jerk{kNaN};  // m/s^3, magnitude
   double rms_lateral_jerk{kNaN};
-  // The root mean square of the speed magnitude over the maneuver, not smoothed.
-  double rms_speed{kNaN};  // m/s
-  std::size_t samples{0};  // inside the maneuver
+  // Along the direction of travel (the same in reverse): speeding up and braking are separate.
+  double max_speedup{kNaN};  // m/s^2
+  double max_braking{kNaN};  // m/s^2, as a positive number
+  double rms_longitudinal_accel{kNaN};
+  double max_longitudinal_jerk{kNaN};  // m/s^3, magnitude
+  double rms_longitudinal_jerk{kNaN};
+
+  // How quickly the maneuver goes. The speed is not smoothed.
+  double rms_speed{kNaN};          // m/s, root mean square of the speed magnitude
+  double distance{kNaN};           // m driven
+  double moving_time{kNaN};        // s with a speed above `moving_speed`
+  double standing_time{kNaN};      // s at or below it: stops, gear changes, the start
+  double mean_moving_speed{kNaN};  // m/s: distance / moving time
+  std::size_t samples{0};          // inside the maneuver
 };
 
 // `samples` in any order. `start` empty: there was no maneuver, everything stays NaN. `end` empty:

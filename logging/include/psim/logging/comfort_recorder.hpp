@@ -34,9 +34,12 @@ struct ComfortReport {
 // the effect of the sensors: noise, gyro bias, wheel scale error, latency.
 //
 // Messages: the lateral acceleration is the odometry speed times the IMU yaw rate (the IMU's own
-// accel_y has a noise of 0.05 m/s^2, as large as the signal at parking speed). The odometry speed
-// is stamped at the middle of its window. The maneuver window comes from the commands: from the
-// first gear other than Park to the first Park after it.
+// accel_y has a noise of 0.05 m/s^2, as large as the signal at parking speed). The longitudinal
+// acceleration is the IMU's accel_x (1 m/s^2 against the same noise, which the window averages
+// down), turned to the direction of travel by the engaged gear (Reverse flips it). The odometry
+// speed is stamped at the middle of its window, and the IMU values are interpolated to it. The
+// maneuver window comes from the commands: from the first gear other than Park to the first Park
+// after it.
 //
 // Evaluation only: the truth enters through the snapshots, which only the app builds.
 class ComfortRecorder {
@@ -53,9 +56,16 @@ class ComfortRecorder {
   [[nodiscard]] ComfortReport report() const;
 
  private:
-  struct YawRateSample {
+  struct ImuSample {
     SimTime t;
     double yaw_rate;
+    double accel_x;
+  };
+  struct TruthSample {
+    SimTime t;
+    double lateral_accel;
+    double accel_x;
+    double speed;
   };
   struct OdometrySample {
     SimTime t;
@@ -66,12 +76,15 @@ class ComfortRecorder {
     Gear gear;
   };
 
+  [[nodiscard]] std::vector<ComfortSample> truth_series() const;
   [[nodiscard]] std::vector<ComfortSample> message_samples() const;
+  // +1 for Drive, -1 for Reverse: the direction last commanded at `t` (Park keeps it).
+  [[nodiscard]] double direction_at(SimTime t) const;
 
   ComfortRecorderParams params_;
   double meters_per_tick_;
-  std::vector<ComfortSample> truth_samples_;
-  std::vector<YawRateSample> yaw_rates_;
+  std::vector<TruthSample> truth_samples_;
+  std::vector<ImuSample> imu_;
   std::vector<OdometrySample> odometry_;
   std::vector<GearChange> gear_changes_;
 };

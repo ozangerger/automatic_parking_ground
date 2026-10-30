@@ -228,6 +228,15 @@ struct ComfortGroup {
   StatPair jerk_max;
   StatPair jerk_rms;
   StatPair speed_rms;
+  StatPair speedup_max;
+  StatPair braking_max;
+  StatPair long_rms;
+  StatPair long_jerk_max;
+  StatPair long_jerk_rms;
+  StatPair distance;
+  StatPair moving;
+  StatPair standing;
+  StatPair moving_speed;
 };
 
 std::string pair_cell(const StatPair& stats, int precision) {
@@ -251,27 +260,58 @@ std::string format_comfort_table(const std::vector<RunRecord>& records) {
     g.jerk_max.add(t.max_lateral_jerk, m.max_lateral_jerk);
     g.jerk_rms.add(t.rms_lateral_jerk, m.rms_lateral_jerk);
     g.speed_rms.add(t.rms_speed, m.rms_speed);
+    g.speedup_max.add(t.max_speedup, m.max_speedup);
+    g.braking_max.add(t.max_braking, m.max_braking);
+    g.long_rms.add(t.rms_longitudinal_accel, m.rms_longitudinal_accel);
+    g.long_jerk_max.add(t.max_longitudinal_jerk, m.max_longitudinal_jerk);
+    g.long_jerk_rms.add(t.rms_longitudinal_jerk, m.rms_longitudinal_jerk);
+    g.distance.add(t.distance, m.distance);
+    g.moving.add(t.moving_time, m.moving_time);
+    g.standing.add(t.standing_time, m.standing_time);
+    g.moving_speed.add(t.mean_moving_speed, m.mean_moving_speed);
   }
 
   std::ostringstream out;
-  out << "| controller | estimator | controller state | runs | maneuver (s) | max lateral accel "
-         "(m/s²) | rms lateral accel (m/s²) | max lateral jerk (m/s³) | rms lateral jerk (m/s³) | "
-         "rms speed (m/s) |\n";
-  out << "|---|---|---|---|---|---|---|---|---|---|\n";
-  for (const auto& [key, g] : groups) {
+  const auto row_start = [&](const std::tuple<int, int, int>& key, const ComfortGroup& g) {
     out << "| " << name_of(static_cast<ControllerKind>(std::get<0>(key))) << " | "
         << name_of(static_cast<EstimatorKind>(std::get<1>(key))) << " | "
         << name_of(static_cast<StateSource>(std::get<2>(key))) << " | " << g.runs << " | "
-        << number(g.duration.mean(), 1) << " | " << pair_cell(g.accel_max, kPrecision) << " | "
-        << pair_cell(g.accel_rms, kPrecision) << " | " << pair_cell(g.jerk_max, kPrecision) << " | "
-        << pair_cell(g.jerk_rms, kPrecision) << " | " << pair_cell(g.speed_rms, kPrecision)
+        << number(g.duration.mean(), 1) << " | ";
+  };
+
+  out << "Lateral\n\n"
+      << "| controller | estimator | controller state | runs | maneuver (s) | max lateral accel "
+         "(m/s²) | rms lateral accel (m/s²) | max lateral jerk (m/s³) | rms lateral jerk (m/s³) "
+         "|\n"
+      << "|---|---|---|---|---|---|---|---|---|\n";
+  for (const auto& [key, g] : groups) {
+    row_start(key, g);
+    out << pair_cell(g.accel_max, kPrecision) << " | " << pair_cell(g.accel_rms, kPrecision)
+        << " | " << pair_cell(g.jerk_max, kPrecision) << " | " << pair_cell(g.jerk_rms, kPrecision)
         << " |\n";
+  }
+
+  out << "\nLongitudinal and progress\n\n"
+      << "| controller | estimator | controller state | runs | maneuver (s) | max speed-up (m/s²) "
+         "| "
+         "max braking (m/s²) | rms accel (m/s²) | max jerk (m/s³) | rms jerk (m/s³) | rms speed "
+         "(m/s) | mean speed moving (m/s) | distance (m) | moving (s) | standing (s) |\n"
+      << "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n";
+  for (const auto& [key, g] : groups) {
+    row_start(key, g);
+    out << pair_cell(g.speedup_max, kPrecision) << " | " << pair_cell(g.braking_max, kPrecision)
+        << " | " << pair_cell(g.long_rms, kPrecision) << " | "
+        << pair_cell(g.long_jerk_max, kPrecision) << " | " << pair_cell(g.long_jerk_rms, kPrecision)
+        << " | " << pair_cell(g.speed_rms, kPrecision) << " | "
+        << pair_cell(g.moving_speed, kPrecision) << " | " << pair_cell(g.distance, 1) << " | "
+        << pair_cell(g.moving, 1) << " | " << pair_cell(g.standing, 1) << " |\n";
   }
   out << "\nMean over the seeds, \"truth / messages\". The maneuver runs from the first gear "
          "command "
-         "other than Park to the next Park command (Done or Abort). Lateral accel and jerk are "
-         "smoothed over a 0.3 s window; the messages give them as odometry speed times IMU yaw "
-         "rate.\n";
+         "other than Park to the next Park command (Done or Abort). Accelerations and jerk are "
+         "smoothed over a 0.3 s window and cover the moving vehicle only (speed above 0.05 m/s); "
+         "longitudinal values are along the direction of travel. From the messages, lateral is "
+         "odometry speed times IMU yaw rate and longitudinal is the IMU accel_x.\n";
   return out.str();
 }
 
@@ -285,7 +325,11 @@ std::string format_csv(const std::vector<RunRecord>& records) {
          "steering_travel_rad,max_lateral_accel,estimate_rmse_position_m,estimate_rmse_yaw_deg,"
          "maneuver_s,truth_max_lat_accel,truth_rms_lat_accel,truth_max_lat_jerk,truth_rms_lat_jerk,"
          "truth_rms_speed,msg_max_lat_accel,msg_rms_lat_accel,msg_max_lat_jerk,msg_rms_lat_jerk,"
-         "msg_rms_speed\n";
+         "msg_rms_speed,truth_max_speedup,truth_max_braking,truth_rms_long_accel,"
+         "truth_max_long_jerk,truth_rms_long_jerk,truth_distance,truth_moving_s,truth_standing_s,"
+         "truth_mean_moving_speed,msg_max_speedup,msg_max_braking,msg_rms_long_accel,"
+         "msg_max_long_jerk,msg_rms_long_jerk,msg_distance,msg_moving_s,msg_standing_s,"
+         "msg_mean_moving_speed\n";
   for (const RunRecord& r : records) {
     const RunMetrics& m = r.metrics;
     out << name_of(r.controller) << ',' << name_of(r.estimator) << ','
@@ -300,7 +344,14 @@ std::string format_csv(const std::vector<RunRecord>& records) {
         << m.comfort.truth.max_lateral_jerk << ',' << m.comfort.truth.rms_lateral_jerk << ','
         << m.comfort.truth.rms_speed << ',' << m.comfort.messages.max_lateral_accel << ','
         << m.comfort.messages.rms_lateral_accel << ',' << m.comfort.messages.max_lateral_jerk << ','
-        << m.comfort.messages.rms_lateral_jerk << ',' << m.comfort.messages.rms_speed << '\n';
+        << m.comfort.messages.rms_lateral_jerk << ',' << m.comfort.messages.rms_speed;
+    for (const ComfortMetrics* c : {&m.comfort.truth, &m.comfort.messages}) {
+      out << ',' << c->max_speedup << ',' << c->max_braking << ',' << c->rms_longitudinal_accel
+          << ',' << c->max_longitudinal_jerk << ',' << c->rms_longitudinal_jerk << ','
+          << c->distance << ',' << c->moving_time << ',' << c->standing_time << ','
+          << c->mean_moving_speed;
+    }
+    out << '\n';
   }
   return out.str();
 }

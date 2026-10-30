@@ -46,9 +46,10 @@ std::optional<double> min_range(const std::vector<UssRay>& rays) {
 
 const std::vector<std::string>& CsvSink::columns() {
   static const std::vector<std::string> names{
-      "t_s",     "truth_x", "truth_y", "truth_yaw", "truth_v",   "truth_steer", "est_x",
-      "est_y",   "est_yaw", "est_v",   "p_x",       "p_y",       "p_yaw",       "p_v",
-      "pos_err", "yaw_err", "v_err",   "cmd_steer", "cmd_accel", "cmd_gear",    "min_uss", "nis"};
+      "t_s",       "truth_x",  "truth_y", "truth_yaw", "truth_v",     "truth_steer",
+      "est_x",     "est_y",    "est_yaw", "est_v",     "p_x",         "p_y",
+      "p_yaw",     "p_v",      "pos_err", "yaw_err",   "v_err",       "cmd_steer",
+      "cmd_accel", "cmd_gear", "min_uss", "nis",       "truth_accel", "truth_lat_accel"};
   return names;
 }
 
@@ -87,7 +88,7 @@ void CsvSink::on_snapshot(const Snapshot& s) {
   if (s.nis.has_value()) {
     out_ << s.nis.value_or(0.0);
   }
-  out_ << '\n';
+  out_ << ',' << s.truth_accel << ',' << s.truth_lateral_accel << '\n';
   ++rows_;
 }
 

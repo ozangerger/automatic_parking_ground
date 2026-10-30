@@ -2,10 +2,12 @@
 
 #include <cmath>
 #include <limits>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #include "psim/app/metrics.hpp"
 #include "psim/app/metrics_table.hpp"
+#include "psim/app/run_report.hpp"
 #include "psim/msgs/math.hpp"
 #include "psim/sim_core/scenario_loader.hpp"
 
@@ -209,6 +211,41 @@ TEST(Comfort, TheMessagesAgreeWithTheTruthOnAParkingManeuverWithPerfectSensors) 
   EXPECT_GT(c.truth.max_lateral_accel, 0.04);
 }
 
+TEST(Comfort, TheLongitudinalNumbersAgreeToo) {
+  Scenario scenario = lot();
+  scenario.duration = from_seconds(30.0);
+  scenario.noise.enabled = false;
+  scenario.algorithms.estimator = EstimatorKind::Ekf;
+  scenario.algorithms.planner = PlannerKind::Perpendicular;
+  scenario.slot = SlotSpec{Pose2D{-1.0, -8.0, 1.5707963267948966}, 2.6, 5.5};
+  scenario.obstacles.clear();
+  scenario.start_pose = Pose2D{};
+  BatchOptions options;
+  options.seeds = 1;
+  options.estimators = {EstimatorKind::Ekf};
+  const ComfortReport c = run_batch(scenario, options).front().metrics.comfort;
+
+  // The profile accelerates at 1 m/s^2 at most; through the actuator lag and the smoothing the
+  // controller gets to 0.6 m/s^2 (measured: 0.63 speeding up, 0.65 braking, jerk 1.5 m/s^3).
+  EXPECT_GT(c.truth.max_speedup, 0.3);
+  EXPECT_LT(c.truth.max_speedup, 1.0);
+  EXPECT_GT(c.truth.max_braking, 0.3);
+  EXPECT_LT(c.truth.max_braking, 1.0);
+  EXPECT_LT(c.truth.max_longitudinal_jerk, 3.0);
+  EXPECT_NEAR(c.messages.max_speedup, c.truth.max_speedup, 0.05);
+  EXPECT_NEAR(c.messages.max_braking, c.truth.max_braking, 0.05);
+  EXPECT_NEAR(c.messages.rms_longitudinal_accel, c.truth.rms_longitudinal_accel, 0.02);
+  EXPECT_NEAR(c.messages.max_longitudinal_jerk, c.truth.max_longitudinal_jerk, 0.5);
+
+  // Progress: the same path from both, and the time adds up.
+  EXPECT_NEAR(c.messages.distance, c.truth.distance, 0.3);
+  EXPECT_GT(c.truth.distance, 10.0);
+  EXPECT_NEAR(c.truth.moving_time + c.truth.standing_time, c.truth.duration, 1e-6);
+  EXPECT_NEAR(c.truth.distance / c.truth.moving_time, c.truth.mean_moving_speed, 1e-9);
+  EXPECT_GT(c.truth.standing_time, 0.5);  // the stop between the forward and the reverse leg
+  EXPECT_LT(c.truth.standing_time, 4.0);
+}
+
 TEST(Comfort, AWheelScaleErrorShowsInTheSpeedOfTheMessagesButNotInTheTruth) {
   Scenario scenario =
       load_scenario(std::string{PSIM_SCENARIO_DIR} + "/S4_perpendicular_degraded.json");
@@ -243,7 +280,48 @@ TEST(Comfort, TheTableAndTheCsvListBothSources) {
   EXPECT_NE(table.find("| pure_pursuit | ekf | estimate | 1 |"), std::string::npos) << table;
   const std::string csv = format_csv(records);
   EXPECT_NE(csv.find("maneuver_s,truth_max_lat_accel"), std::string::npos);
-  EXPECT_NE(csv.find("msg_rms_speed\n"), std::string::npos);
+  EXPECT_NE(csv.find("msg_mean_moving_speed\n"), std::string::npos);
+  EXPECT_NE(csv.find("truth_max_long_jerk"), std::string::npos);
+}
+
+// ---- the report of one run ----------------------------------------------------------------------
+
+TEST(RunReport, IsJsonWithTheComfortOfBothSourcesAndNullForWhatDoesNotExist) {
+  Scenario scenario = lot();
+  scenario.algorithms.controller = ControllerKind::Stanley;
+  RunSummary summary;
+  summary.final_maneuver = ManeuverState::Done;
+  summary.plan_status = PlanStatus::Ok;
+  RunMetrics metrics;
+  metrics.comfort.truth.duration = 12.5;
+  metrics.comfort.truth.max_lateral_jerk = 0.1;
+  metrics.comfort.truth.max_speedup = 0.6;
+  metrics.comfort.messages.max_lateral_jerk = 0.12;
+
+  const nlohmann::json j = nlohmann::json::parse(run_report_json(scenario, summary, metrics));
+  EXPECT_EQ(j.at("scenario"), "m");
+  EXPECT_EQ(j.at("controller"), "stanley");
+  EXPECT_EQ(j.at("estimator"), "ekf");
+  EXPECT_EQ(j.at("maneuver"), "Done");
+  EXPECT_EQ(j.at("plan"), "Ok");
+  const nlohmann::json& comfort = j.at("comfort");
+  EXPECT_NEAR(comfort.at("window_s").get<double>(), 0.3, 1e-12);
+  EXPECT_NEAR(comfort.at("truth").at("maneuver_s").get<double>(), 12.5, 1e-12);
+  EXPECT_NEAR(comfort.at("truth").at("lateral").at("max_jerk_mps3").get<double>(), 0.1, 1e-12);
+  EXPECT_NEAR(comfort.at("messages").at("lateral").at("max_jerk_mps3").get<double>(), 0.12, 1e-12);
+  EXPECT_NEAR(comfort.at("truth").at("longitudinal").at("max_speedup_mps2").get<double>(), 0.6,
+              1e-12);
+  // Nothing was measured here: NaN and infinity become null, not invalid JSON.
+  EXPECT_TRUE(comfort.at("messages").at("maneuver_s").is_null());
+  EXPECT_TRUE(j.at("final_pose_in_slot_frame").at("lateral_m").is_null());
+  EXPECT_TRUE(j.at("min_clearance_m").is_null() || j.at("min_clearance_m").is_number());
+}
+
+TEST(RunReport, AnOpenLoopRunHasNoManeuverStateAndNoPlan) {
+  const nlohmann::json j =
+      nlohmann::json::parse(run_report_json(lot(), RunSummary{}, RunMetrics{}));
+  EXPECT_TRUE(j.at("maneuver").is_null());
+  EXPECT_TRUE(j.at("plan").is_null());
 }
 
 // ---- batch and table ----------------------------------------------------------------------------

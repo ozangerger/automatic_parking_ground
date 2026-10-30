@@ -1,6 +1,6 @@
 psim_add_test(app_tests
   SOURCES test_scripted_commander.cpp test_sim_runner.cpp test_scenarios.cpp test_closed_loop.cpp test_planned_parking.cpp test_metrics.cpp
-  DEPS sim_runner)
+  DEPS sim_runner nlohmann_json::nlohmann_json)
 target_compile_definitions(app_tests PRIVATE
   PSIM_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/scenarios")
 

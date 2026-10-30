@@ -15,8 +15,8 @@ namespace {
 constexpr double kHalf = 0.5;
 constexpr double kTwo = 2.0;
 
-// The yaw rate at time `t` by linear interpolation between the two samples around it; nothing
-// outside the recorded range.
+// The value at time `t` by linear interpolation between the two samples around it; nothing outside
+// the recorded range.
 std::optional<double> interpolate(const std::vector<std::pair<double, double>>& series, double t) {
   if (series.empty() || t < series.front().first || t > series.back().first) {
     return std::nullopt;
@@ -56,7 +56,7 @@ void ComfortRecorder::on_command(SimTime stamp, Gear gear) {
 
 void ComfortRecorder::on_message(const SensorMsg& msg) {
   if (const auto* imu = std::get_if<ImuMsg>(&msg)) {
-    yaw_rates_.push_back(YawRateSample{imu->stamp, imu->yaw_rate});
+    imu_.push_back(ImuSample{imu->stamp, imu->yaw_rate, imu->accel_x});
   } else if (const auto* odometry = std::get_if<WheelOdomMsg>(&msg)) {
     odometry_.push_back(OdometrySample{
         odometry->stamp, kHalf * static_cast<double>(odometry->ticks_rl + odometry->ticks_rr)});
@@ -64,47 +64,77 @@ void ComfortRecorder::on_message(const SensorMsg& msg) {
 }
 
 void ComfortRecorder::on_snapshot(const Snapshot& s) {
-  truth_samples_.push_back(ComfortSample{s.t, s.truth_lateral_accel, s.truth_v});
+  truth_samples_.push_back(TruthSample{s.t, s.truth_lateral_accel, s.truth_accel, s.truth_v});
   on_command(s.cmd.stamp, s.cmd.gear);
   for (const SensorMsg& msg : s.ecu_messages) {
     on_message(msg);
   }
 }
 
+double ComfortRecorder::direction_at(SimTime t) const {
+  // The last direction commanded: Park and Neutral keep it, so that the samples just after the
+  // maneuver (which still feed the smoothing at its end) are read the same way.
+  double direction = 1.0;
+  for (const GearChange& change : gear_changes_) {
+    if (change.t > t) {
+      break;
+    }
+    if (change.gear == Gear::Reverse) {
+      direction = -1.0;
+    } else if (change.gear == Gear::Drive) {
+      direction = 1.0;
+    }
+  }
+  return direction;
+}
+
+std::vector<ComfortSample> ComfortRecorder::truth_series() const {
+  std::vector<ComfortSample> samples;
+  samples.reserve(truth_samples_.size());
+  for (const TruthSample& s : truth_samples_) {
+    samples.push_back(ComfortSample{s.t, s.lateral_accel, s.accel_x * direction_at(s.t), s.speed});
+  }
+  return samples;
+}
+
 std::vector<ComfortSample> ComfortRecorder::message_samples() const {
-  std::vector<YawRateSample> imu = yaw_rates_;
+  std::vector<ImuSample> imu = imu_;
   std::vector<OdometrySample> odo = odometry_;
   std::sort(imu.begin(), imu.end(),
-            [](const YawRateSample& a, const YawRateSample& b) { return a.t < b.t; });
+            [](const ImuSample& a, const ImuSample& b) { return a.t < b.t; });
   std::sort(odo.begin(), odo.end(),
             [](const OdometrySample& a, const OdometrySample& b) { return a.t < b.t; });
   std::vector<std::pair<double, double>> yaw_series;
+  std::vector<std::pair<double, double>> accel_series;
   yaw_series.reserve(imu.size());
-  for (const YawRateSample& y : imu) {
+  accel_series.reserve(imu.size());
+  for (const ImuSample& y : imu) {
     yaw_series.emplace_back(to_seconds(y.t), y.yaw_rate);
+    accel_series.emplace_back(to_seconds(y.t), y.accel_x);
   }
 
   std::vector<ComfortSample> samples;
   const double window = params_.speed_window;
   std::size_t base = 0;  // the latest odometry sample at least `window` before the current one
-  bool have_base = false;
   for (std::size_t i = 0; i < odo.size(); ++i) {
     const double now = to_seconds(odo[i].t);
     while (base + 1 < i && to_seconds(odo[base + 1].t) <= now - window) {
       ++base;
     }
-    have_base = to_seconds(odo[base].t) <= now - window;
-    if (!have_base) {
+    if (!(to_seconds(odo[base].t) <= now - window)) {
       continue;
     }
     const double dt = now - to_seconds(odo[base].t);
     const double speed = (odo[i].ticks - odo[base].ticks) * meters_per_tick_ / dt;
     const double middle = kHalf * (now + to_seconds(odo[base].t));
     const std::optional<double> yaw_rate = interpolate(yaw_series, middle);
-    if (!yaw_rate.has_value()) {
+    const std::optional<double> accel_x = interpolate(accel_series, middle);
+    if (!yaw_rate.has_value() || !accel_x.has_value()) {
       continue;
     }
-    samples.push_back(ComfortSample{from_seconds(middle), speed * *yaw_rate, std::abs(speed)});
+    const SimTime stamp = from_seconds(middle);
+    samples.push_back(
+        ComfortSample{stamp, speed * *yaw_rate, *accel_x * direction_at(stamp), std::abs(speed)});
   }
   return samples;
 }
@@ -123,7 +153,7 @@ ComfortReport ComfortRecorder::report() const {
     }
   }
   ComfortReport report;
-  report.truth = comfort_metrics(truth_samples_, start, end, params_.comfort);
+  report.truth = comfort_metrics(truth_series(), start, end, params_.comfort);
   report.messages = comfort_metrics(message_samples(), start, end, params_.comfort);
   return report;
 }

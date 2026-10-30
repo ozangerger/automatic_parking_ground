@@ -288,35 +288,54 @@ frame, maximum and RMS distance from the path, steering travel, minimum clearanc
 # Ride comfort
 
 Precision is not the only thing a maneuver is judged by. `MetricsSink` also reports how the maneuver
-*feels* and how fast it is, in `RunMetrics::comfort`, in the `comfort.md` that `sim_table` writes next to
-`table.md`, and in `runs.csv`.
+*feels* and how fast it is, in `RunMetrics::comfort`.
 
 | Metric | Meaning |
 |---|---|
 | maneuver time | idle to idle: from the first gear command other than Park to the next Park command (Done or Abort) |
-| max and rms lateral acceleration | m/s², of the smoothed signal, over the maneuver |
-| max and rms lateral jerk | m/s³, the rate of change of the lateral acceleration |
-| rms speed | m/s, root mean square of \|v\| over the maneuver (standing before and after it does not count) |
+| max and rms lateral acceleration, lateral jerk | m/s², m/s³, of the smoothed signal, over the moving vehicle |
+| max speed-up, max braking | m/s², longitudinal acceleration along the direction of travel (the same in reverse), each as a positive number |
+| rms longitudinal acceleration, max and rms longitudinal jerk | m/s², m/s³ |
+| rms speed, mean speed while moving | m/s; the rms covers the whole maneuver including the stops |
+| distance, time moving, time standing | m, s; standing = at or below 0.05 m/s (the start, the stop, the gear change dwell) |
 
 **Smoothing.** The acceleration is the mean over a 0.3 s window around each sample. The jerk is the
 difference of the means of the two half windows divided by the time between their centers, which
 averages down the noise (for white noise of 0.003 m/s² at 100 Hz the jerk noise is about 0.007 m/s³
 instead of 0.4) and averages out jerk spikes shorter than 0.15 s.
 
+**Standing samples are left out** of the acceleration and jerk statistics. At a gear change and at the
+end the plant stops a residual speed of a few cm/s within one tick (−2.4 m/s², a raw jerk of about
+240 m/s³), which nobody feels and which dominated the maximum before: the longitudinal jerk maximum
+was 2.1 m/s³ with it and 1.5 without. Time and distance still count the standing samples.
+
 **Two measurements.** Every number is computed twice with the same function, window and maneuver:
-- *truth*: the vehicle's true lateral acceleration and speed, what the occupant feels;
+- *truth*: the vehicle's true accelerations and speed, what the occupant feels;
 - *messages*: only the IMU and wheel odometry messages the ECU received (latency, jitter and drops
   included). Lateral acceleration is odometry speed times IMU yaw rate: the IMU's own `accel_y` has a
-  noise of 0.05 m/s², as large as the signal at parking speed. Speed comes from rear wheel ticks over
+  noise of 0.05 m/s², as large as the signal at parking speed. Longitudinal acceleration is `accel_x`
+  (1 m/s² against the same noise, which the window averages down). Speed comes from rear wheel ticks over
   0.2 s windows. This is what a real vehicle log would give, and the difference to the truth is the effect of the sensors.
 
-`comfort.md` shows "truth / messages" per cell. S3, EKF, 20 seeds: max lateral acceleration 0.077 / 0.078 m/s²,
-max lateral jerk 0.104 / 0.113 m/s³, rms jerk 0.015 / 0.020 m/s³, rms speed 0.596 / 0.598 m/s. The three
-steering laws differ by less than 0.005 m/s³ in the rms jerk: at 0.6 m/s the steering rate limit keeps lateral jerk small whatever the law, so the
-lateral numbers are set by the planner (arc radius, speeds). In S4 the messages read the speed 2.6 % low (the 3 % wheel scale error).
+**Where it is recorded**
 
-**Not built yet:** longitudinal acceleration and jerk (probably the dominant comfort cost: start and stop on the
-actuator's 0.2 s lag), command-based metrics from `VehicleCmd`, comfort limits in a scenario's `acceptance`.
+| What | Where |
+|---|---|
+| one run, all numbers | `out/<scenario>/<run>/metrics.json` (written by `sim_main`; `null` for what does not exist) |
+| one run, as time series | `run.csv` has `truth_accel` and `truth_lat_accel`; `plot.py ... --comfort` draws speed, acceleration and jerk |
+| a batch over seeds | `out/<scenario>/comfort.md` ("truth / messages", mean over the seeds) and the comfort columns of `runs.csv` |
+| in the PNGs | the numbers under the title of every `plot.py` figure when `metrics.json` is there; `comfort.png` (controllers overlaid) and `comfort_single.png` per scenario |
+
+**Results**, S3 with the EKF and pure pursuit, 20 seeds (truth / messages): max speed-up 0.63 / 0.65 m/s²,
+max braking 0.66 / 0.67 m/s², max longitudinal jerk 1.8 / 1.9 m/s³, max lateral acceleration 0.077 / 0.078 m/s²,
+max lateral jerk 0.10 / 0.11 m/s³, rms speed 0.596 / 0.598 m/s, 15.3 m in 28.5 s (26.8 s moving, 1.7 s standing).
+The longitudinal side is where the comfort cost is: the accelerations and the jerk come from the speed profile
+(1 m/s²) shaped by the actuator's 0.2 s lag, so a jerk-limited profile is the lever. The three steering laws match
+on everything longitudinal; at the arc exit Stanley and Kanayama peak at about 0.07 m/s³ of lateral jerk against
+0.03 for pure pursuit (read from `comfort.png`; rms 0.019–0.020 against 0.016 m/s³). In S4 the messages read the speed 2.6 % low (the 3 % wheel scale error).
+
+**Not built yet:** comfort limits in a scenario's `acceptance`, metrics from `VehicleCmd`, time efficiency
+against the planned profile.
 
 # TODO
 

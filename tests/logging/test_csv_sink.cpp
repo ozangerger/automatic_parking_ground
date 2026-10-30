@@ -173,7 +173,24 @@ TEST(CsvSink, NisColumnIsTheSnapshotValueOrEmpty) {
   ASSERT_EQ(csv.rows.size(), 2U);
   EXPECT_NEAR(csv.number(0, "nis"), 1.75, 1e-9);
   EXPECT_EQ(csv.rows[1].at("nis"), "");
-  EXPECT_EQ(csv.header.back(), "nis");
+  EXPECT_EQ(csv.header[csv.header.size() - 3], "nis");  // followed by the two truth accelerations
+}
+
+TEST(CsvSink, TruthAccelerationsAreTheLastTwoColumns) {
+  const TempDir dir;
+  const auto file = dir.path() / "run.csv";
+  {
+    CsvSink sink{file};
+    Snapshot s = sample_snapshot();
+    s.truth_accel = 0.75;
+    s.truth_lateral_accel = -0.125;
+    sink.on_snapshot(s);
+  }
+  const Csv csv = read_csv(file);
+  EXPECT_EQ(csv.header[csv.header.size() - 2], "truth_accel");
+  EXPECT_EQ(csv.header.back(), "truth_lat_accel");
+  EXPECT_NEAR(csv.number(0, "truth_accel"), 0.75, 1e-9);
+  EXPECT_NEAR(csv.number(0, "truth_lat_accel"), -0.125, 1e-9);
 }
 
 TEST(CsvSink, WritesAllGearNames) {

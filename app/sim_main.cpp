@@ -1,6 +1,7 @@
 #include <cmath>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -8,6 +9,7 @@
 
 #include "psim/app/metrics.hpp"
 #include "psim/app/metrics_table.hpp"
+#include "psim/app/run_report.hpp"
 #include "psim/app/sim_runner.hpp"
 #include "psim/logging/csv_sink.hpp"
 #include "psim/logging/multi_sink.hpp"
@@ -77,7 +79,18 @@ void print_metrics(const psim::RunMetrics& m, const std::optional<psim::Acceptan
               << ", rms " << t.rms_lateral_accel << " / " << g.rms_lateral_accel << " m/s^2\n"
               << "    lateral jerk    max " << t.max_lateral_jerk << " / " << g.max_lateral_jerk
               << ", rms " << t.rms_lateral_jerk << " / " << g.rms_lateral_jerk << " m/s^3\n"
-              << "    speed           rms " << t.rms_speed << " / " << g.rms_speed << " m/s\n";
+              << "    longitudinal    speed-up max " << t.max_speedup << " / " << g.max_speedup
+              << ", braking max " << t.max_braking << " / " << g.max_braking << ", rms "
+              << t.rms_longitudinal_accel << " / " << g.rms_longitudinal_accel << " m/s^2\n"
+              << "    long. jerk      max " << t.max_longitudinal_jerk << " / "
+              << g.max_longitudinal_jerk << ", rms " << t.rms_longitudinal_jerk << " / "
+              << g.rms_longitudinal_jerk << " m/s^3\n"
+              << "    speed           rms " << t.rms_speed << " / " << g.rms_speed
+              << " m/s, mean while moving " << t.mean_moving_speed << " / " << g.mean_moving_speed
+              << " m/s\n"
+              << "    progress        " << t.distance << " / " << g.distance << " m in "
+              << t.moving_time << " / " << g.moving_time << " s moving, " << t.standing_time
+              << " / " << g.standing_time << " s standing\n";
   }
   if (limits.has_value()) {
     const bool parked = maneuver == psim::ManeuverState::Done;
@@ -178,6 +191,13 @@ int main(int argc, char** argv) {
       }
     }
     psim::write_scene(scene, out_dir / "scene.json");
+    {
+      std::ofstream report{out_dir / "metrics.json"};
+      report << psim::run_report_json(scenario, summary, metrics_sink.metrics());
+      if (!report) {
+        throw std::runtime_error("cannot write " + (out_dir / "metrics.json").string());
+      }
+    }
 
     const psim::Pose2D& truth = summary.final_truth;
     const auto& est = summary.final_estimate;
@@ -194,7 +214,7 @@ int main(int argc, char** argv) {
               << "  final estimate x=" << est.x(0) << " y=" << est.x(1) << " yaw=" << est.x(2)
               << " v=" << est.x(3) << '\n'
               << "  position error " << std::hypot(est.x(0) - truth.x, est.x(1) - truth.y) << " m\n"
-              << "  wrote " << (out_dir / "run.csv").string() << " and scene.json\n";
+              << "  wrote " << (out_dir / "run.csv").string() << ", scene.json and metrics.json\n";
     if (!summary.path.points.empty()) {
       print_metrics(metrics_sink.metrics(), scenario.acceptance, summary.final_maneuver);
     }
