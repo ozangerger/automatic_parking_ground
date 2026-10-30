@@ -19,6 +19,8 @@ set(PSIM_ALLOWED_fusion msgs geometry)
 set(PSIM_ALLOWED_planning msgs geometry)
 set(PSIM_ALLOWED_control msgs geometry)
 set(PSIM_ALLOWED_logging msgs)
+# The optional Rerun sink (USE_RERUN): the only place that may link the Rerun SDK.
+set(PSIM_ALLOWED_logging_rerun msgs logging rerun_sdk)
 
 # psim_dependency_allowed(<library> <dependency> <out_var>)
 # Sets <out_var> to TRUE when <library> may link against <dependency>.

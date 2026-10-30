@@ -70,6 +70,7 @@ Allowed link dependencies, in [cmake/DependencyRules.cmake](../cmake/DependencyR
 | vehicle_if | msgs, sim_core (seeded RNG) |
 | **fusion, planning, control** | **msgs and geometry only** |
 | logging | msgs |
+| logging_rerun (only with `USE_RERUN=ON`) | msgs, logging, the Rerun SDK |
 | app | everything |
 
 - `psim_verify_dependency_graph()` stops the **configure** step on a violation. `tests/boundary`
@@ -149,7 +150,11 @@ hardcoded path, or a planner. A closed-loop scenario can carry `acceptance` limi
   `table.md` and `runs.csv`.
 - **`tools/plot.py`** draws the trajectory (truth, estimate, planned path), error panels, NIS and, for
   closed loop, cross-track, steering and speed. One to three runs are overlaid.
-- A Rerun sink behind `-DUSE_RERUN=ON` is planned (PLAN.md section 10), not built.
+- **`RerunSink`** (`logging/rerun`, library `logging_rerun`, behind `-DUSE_RERUN=ON`, pinned SDK 0.39.0) is a second
+  `ISnapshotSink` next to `CsvSink`, switched on with `sim_main --rerun` (writes `run.rrd`) or `--rerun-viewer`. It shows the
+  world, both cars with trails, the 2-sigma position ellipse, the ultrasonic beams and the path, plus scalar plots, on the
+  simulation time. The Rerun headers stay out of its public header; the geometry it needs (`viewer_geometry.hpp`) lives in `logging`
+  and is tested without the SDK.
 
 ## 8. Build and test
 
@@ -158,6 +163,7 @@ hardcoded path, or a planner. A closed-loop scenario can carry `acceptance` limi
 | `linux-gcc-debug` | `-Wall -Wextra -Wconversion -Wshadow -Werror`, ASan and UBSan (built with `-O1 -g`, because Eigen at `-O0` under ASan is 15× slower) |
 | `linux-clang-debug` | the same with Clang |
 | `linux-release` | `-O2`, no sanitizers: use it for batches |
+| `linux-rerun` | the release build with `USE_RERUN=ON` (downloads and builds Arrow once) |
 | `linux-clang-tidy` | `cppcoreguidelines-*` and `bugprone-*`, warnings as errors |
 
 Third-party libraries (Eigen, GSL, GoogleTest, nlohmann_json) come in through CMake FetchContent.
@@ -184,4 +190,5 @@ never exact float equality. Format with `clang-format -i` (Google style, 100 col
 - The abort is not map-aware (compare the echo with the range the map predicts).
 - The EKF assumes the vehicle starts parked; scenarios must start at rest.
 - The vehicle model is kinematic (no tire slip): `steer_model_sigma` in the EKF is a safety margin only.
-- Only Linux builds are verified; a Windows build check and the Rerun sink are open (PLAN step 2.6).
+- Only Linux builds are verified; a Windows build check is open (PLAN step 2.6 chose the Rerun sink instead).
+- The Rerun sink's output was verified with `rerun rrd verify|stats`, not by looking at the viewer.

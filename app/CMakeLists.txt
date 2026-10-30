@@ -8,6 +8,11 @@ target_link_libraries(sim_runner PUBLIC
 
 add_executable(sim_main sim_main.cpp)
 target_link_libraries(sim_main PRIVATE sim_runner)
+if(USE_RERUN)
+  # sim_main --rerun / --rerun-viewer (PLAN.md section 10)
+  target_link_libraries(sim_main PRIVATE logging_rerun)
+  target_compile_definitions(sim_main PRIVATE PSIM_WITH_RERUN=1)
+endif()
 
 add_executable(sim_table sim_table.cpp)
 target_link_libraries(sim_table PRIVATE sim_runner)

@@ -96,6 +96,7 @@ for the ultrasonic update. `geometry` has no dependency on any box.
 | vehicle_if | msgs, sim_core (Rng for BusBuffer) |
 | fusion, planning, control | msgs, geometry, Eigen ONLY |
 | logging | msgs |
+| logging_rerun (only with `USE_RERUN=ON`) | msgs, logging, the Rerun SDK |
 | app (sim_main) | everything |
 
 If `fusion`, `planning` or `control` include anything from `world`, `plant`, `sensors` or

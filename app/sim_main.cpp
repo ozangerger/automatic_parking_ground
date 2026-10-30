@@ -2,6 +2,7 @@
 #include <exception>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -13,15 +14,22 @@
 #include "psim/logging/scene.hpp"
 #include "psim/msgs/math.hpp"
 #include "psim/sim_core/scenario_loader.hpp"
+#ifdef PSIM_WITH_RERUN
+#include "psim/logging_rerun/rerun_sink.hpp"
+#endif
 
 namespace {
 
 void print_usage() {
   std::cerr << "usage: sim_main SCENARIO.json [--estimator ekf|dead_reckoning]\n"
                "                [--controller pure_pursuit|stanley|kanayama] [--out DIR]\n"
+               "                [--rerun] [--rerun-viewer]\n"
                "  Runs the scenario headless and writes DIR/run.csv and DIR/scene.json\n"
                "  (default DIR: out/<scenario name>/<estimator>, with _<controller> appended for\n"
                "  a controller other than pure pursuit).\n"
+               "  --rerun also writes DIR/run.rrd for the Rerun viewer (rerun DIR/run.rrd), "
+               "--rerun-viewer\n"
+               "  also streams to a spawned viewer; both need a build with -DUSE_RERUN=ON.\n"
                "  Plot with: python3 tools/plot.py DIR   (two DIRs of one scenario are overlaid)\n";
 }
 
@@ -75,6 +83,8 @@ int main(int argc, char** argv) {
   std::filesystem::path out_dir;
   std::optional<psim::EstimatorKind> estimator;
   std::optional<psim::ControllerKind> controller;
+  bool rerun_file = false;
+  bool rerun_viewer = false;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     if (arg == "--out" && i + 1 < argc) {
@@ -86,6 +96,10 @@ int main(int argc, char** argv) {
         print_usage();
         return 2;
       }
+    } else if (arg == "--rerun") {
+      rerun_file = true;
+    } else if (arg == "--rerun-viewer") {
+      rerun_viewer = true;
     } else if (arg == "--controller" && i + 1 < argc) {
       controller = psim::controller_from_name(
           argv[++i]);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -124,6 +138,24 @@ int main(int argc, char** argv) {
     psim::MultiSink sinks;
     sinks.add(sink);
     sinks.add(metrics_sink);
+#ifdef PSIM_WITH_RERUN
+    std::unique_ptr<psim::RerunSink> rerun_sink;
+    if (rerun_file || rerun_viewer) {
+      psim::RerunSinkOptions rerun_options;
+      rerun_options.application_id = "parking_sim_" + scenario.name;
+      if (rerun_file) {
+        rerun_options.rrd_file = out_dir / "run.rrd";
+      }
+      rerun_options.spawn_viewer = rerun_viewer;
+      rerun_sink = std::make_unique<psim::RerunSink>(scene, rerun_options);
+      sinks.add(*rerun_sink);
+    }
+#else
+    if (rerun_file || rerun_viewer) {
+      std::cerr << "sim_main: built without Rerun support; configure with -DUSE_RERUN=ON\n";
+      return 2;
+    }
+#endif
     options.sink = &sinks;
     const psim::RunSummary summary = psim::run_scenario(scenario, options);
     sink.flush();

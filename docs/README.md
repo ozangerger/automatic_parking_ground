@@ -30,6 +30,10 @@ build/linux-gcc-debug/app/sim_table scenarios/S3_perpendicular_estimate.json --s
     --estimators ekf,dead_reckoning --controllers pure_pursuit,stanley,kanayama
 ```
 
+Optional Rerun viewer (needs `rerun-sdk==0.39.0`, see [CLAUDE.md](../CLAUDE.md)):
+`cmake --preset linux-rerun && cmake --build --preset linux-rerun`, then
+`build/linux-rerun/app/sim_main scenarios/S3_perpendicular_estimate.json --rerun` and `rerun out/S3_perpendicular_estimate/ekf/run.rrd`.
+
 Use the `linux-release` preset for batches (several times faster than the sanitizer build).
 Figures and tables go in `out/<scenario>/` (git-ignored).
 

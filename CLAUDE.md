@@ -25,6 +25,17 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
   scenario are overlaid (same seed = same truth), e.g. dead reckoning against the EKF:
   `python3 tools/plot.py out/S1_degraded_sensors/dead_reckoning out/S1_degraded_sensors/ekf`.
 - `plot.py` needs matplotlib and numpy in the default `python3`, not in the tools venv above.
+- Rerun viewer (PLAN step 2.6), optional: `cmake --preset linux-rerun && cmake --build --preset linux-rerun`
+  (`-DUSE_RERUN=ON`; the first build downloads and builds Arrow, about a minute with 16 cores), then
+  `build/linux-rerun/app/sim_main SCENARIO.json --rerun` writes `DIR/run.rrd` (`--rerun-viewer` also streams
+  to a spawned viewer). The viewer must be the same version as the pinned SDK (0.39.0, `PSIM_RERUN_VERSION` in
+  `cmake/Dependencies.cmake`): `uv venv ~/.venvs/psim-rerun && uv pip install --python ~/.venvs/psim-rerun/bin/python rerun-sdk==0.39.0`,
+  then `~/.venvs/psim-rerun/bin/rerun DIR/run.rrd`; `rerun rrd verify|stats FILE.rrd` check a file without a display.
+  `RerunSink` (`logging/rerun`, library `logging_rerun`, the only code that may link the SDK) logs `world/*`
+  (obstacles, slot, both cars, trails, 2-sigma ellipse, ultrasonic beams, path) and `plots/*` on the `sim_time`
+  timeline. The 2D view has y pointing down, so the sink negates y for display (`flip_y`). The Rerun-free parts
+  (`logging/viewer_geometry.hpp`: footprint, ellipse, ray segment) are tested in every build; the sink's tests only with
+  `USE_RERUN=ON`. Not checked visually (no way to look at the viewer in the session that built it).
 - Colors: truth = categorical slot 1, estimates = slots 2 and 3 (validated, dataviz palette); the two
   estimates also differ by dash pattern. The NIS panel appears only if `run.csv` has an `nis` column
   (planned with the ConsistencyMonitor in step 2.2).

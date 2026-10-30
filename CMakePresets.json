@@ -65,6 +65,14 @@
       }
     },
     {
+      "name": "linux-rerun",
+      "displayName": "Linux GCC Release with the Rerun sink (downloads and builds Arrow)",
+      "inherits": "linux-release",
+      "cacheVariables": {
+        "USE_RERUN": "ON"
+      }
+    },
+    {
       "name": "windows-msvc",
       "displayName": "Windows MSVC (/W4 /permissive-)",
       "inherits": "base",
@@ -92,6 +100,7 @@
     { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
     { "name": "linux-clang-tidy", "configurePreset": "linux-clang-tidy" },
     { "name": "linux-release", "configurePreset": "linux-release" },
+    { "name": "linux-rerun", "configurePreset": "linux-rerun" },
     { "name": "windows-msvc", "configurePreset": "windows-msvc", "configuration": "Debug" },
     { "name": "macos-clang", "configurePreset": "macos-clang" }
   ],
@@ -114,6 +123,11 @@
     {
       "name": "linux-release",
       "configurePreset": "linux-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-rerun",
+      "configurePreset": "linux-rerun",
       "output": { "outputOnFailure": true }
     },
     {

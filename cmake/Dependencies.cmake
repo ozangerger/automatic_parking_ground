@@ -49,7 +49,25 @@ set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 set(JSON_Install OFF CACHE BOOL "" FORCE)
 
+# The Rerun C++ SDK (PLAN.md section 10), only with -DUSE_RERUN=ON. The version is pinned and must
+# match the viewer: pip install rerun-sdk==0.39.0. The bundle contains prebuilt rerun_c libraries
+# and downloads and builds Apache Arrow at configure time (several minutes, once per build tree).
+set(PSIM_RERUN_VERSION 0.39.0 CACHE INTERNAL "Rerun SDK and viewer version")
+if(USE_RERUN)
+  FetchContent_Declare(
+    rerun_sdk
+    URL https://github.com/rerun-io/rerun/releases/download/${PSIM_RERUN_VERSION}/rerun_cpp_sdk.zip
+    URL_HASH SHA256=fa1bee23b3669c5bafbae13132f8521db38e073a4593d1fb486e0d7d05425c8e
+    DOWNLOAD_DIR "${PSIM_DOWNLOAD_CACHE}"
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SYSTEM
+  )
+endif()
+
 FetchContent_MakeAvailable(eigen gsl nlohmann_json)
+if(USE_RERUN)
+  FetchContent_MakeAvailable(rerun_sdk)
+endif()
 if(PSIM_BUILD_TESTS)
   FetchContent_MakeAvailable(googletest)
 endif()
