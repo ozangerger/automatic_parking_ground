@@ -436,8 +436,9 @@ def make_figure(runs, scene, theme, title):
 
     fig.suptitle(title, x=0.06, ha="left", fontsize=13, color=theme["ink"])
     fig.text(0.06, top + 0.025, summary_line(runs), fontsize=9.5, color=theme["ink_secondary"])
-    for k, line in enumerate(comfort_lines):
-        fig.text(0.06, top + 0.045 + 0.02 * k, line, fontsize=9.0, color=theme["ink_secondary"])
+    for k, line in enumerate(comfort_lines):  # the first run on top
+        fig.text(0.06, top + 0.045 + 0.02 * (len(comfort_lines) - 1 - k), line, fontsize=9.0,
+                 color=theme["ink_secondary"])
     return fig
 
 
@@ -475,32 +476,35 @@ def make_comfort_figure(runs, theme, title):
     fig.subplots_adjust(left=0.07, right=0.90, top=top, bottom=0.06, hspace=0.55)
     series = [comfort_data(run) for run in runs]
     colors = [theme["truth"]] if len(runs) == 1 else theme["estimates"][:len(runs)]
+    # The runs overlap where they agree. The first run is drawn widest and at the back, the last one
+    # thin and in front, so that lines that coincide show as nested rather than hidden.
+    widths = [LINE_WIDTH] if len(runs) == 1 else [3.4, 2.2, 1.2][:len(runs)]
     for ax, (panel_title, ylabel, key) in zip(axes, COMFORT_PANELS):
         style_axes(ax, theme)
-        ends = []
         for index, run in enumerate(runs):
             t = run["data"]["t_s"]
             values = series[index][key]
-            ax.plot(t, values, color=colors[index], linewidth=LINE_WIDTH,
-                    linestyle="-" if len(runs) == 1 else ESTIMATE_DASHES[index], label=run["label"])
+            ax.plot(t, values, color=colors[index], linewidth=widths[index],
+                    linestyle="-" if len(runs) == 1 else ESTIMATE_DASHES[index], label=run["label"],
+                    zorder=3 + index)
             metrics = run.get("metrics")
             if metrics and metrics["comfort"]["truth"]["maneuver_s"] is not None:
                 c = metrics["comfort"]["truth"]
                 ax.axvspan(c["start_s"], c["end_s"], color=colors[index], alpha=0.06, linewidth=0)
-            finite = np.isfinite(values)
-            if finite.any():
-                last = np.where(finite)[0][-1]
-                ends.append((values[last], t[last], run["label"]))
         if key != "speed":
             ax.axhline(0.0, color=theme["ink_secondary"], linewidth=0.8)
         ax.set_title(panel_title, loc="left", fontsize=11, color=theme["ink"])
         ax.set_ylabel(ylabel)
-        if len(runs) > 1:
-            label_line_ends(ax, ends, theme)
     axes[-1].set_xlabel("time (s)")
+    if len(runs) > 1:
+        handles, labels = axes[0].get_legend_handles_labels()
+        legend = fig.legend(handles, labels, loc="upper right", bbox_to_anchor=(0.90, 0.995),
+                            ncol=len(runs), frameon=False, fontsize=10, handlelength=3.6)
+        style_legend(legend, theme)
     fig.suptitle(f"{title}: ride comfort", x=0.07, ha="left", fontsize=13, color=theme["ink"])
-    for k, line in enumerate(lines):
-        fig.text(0.07, top + 0.035 + 0.02 * k, line, fontsize=9.0, color=theme["ink_secondary"])
+    for k, line in enumerate(lines):  # the first run on top, like the legend
+        fig.text(0.07, top + 0.035 + 0.02 * (len(lines) - 1 - k), line, fontsize=9.0,
+                 color=theme["ink_secondary"])
     fig.text(0.07, 0.015, "truth, smoothed over 0.3 s; samples at or below 0.05 m/s left out; shaded: "
              "the maneuver (first gear command to the next Park)", fontsize=8.5,
              color=theme["ink_secondary"])
