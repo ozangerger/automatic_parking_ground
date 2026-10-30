@@ -11,8 +11,8 @@ simulator itself is deliberately thin; the algorithms on the ECU side are the po
 | **Control** (`control/`) | estimate + path → steering, acceleration, gear | `ParkingController` with pure pursuit, Stanley or Kanayama steering |
 
 How the pieces are wired, and the rules that keep the ECU side honest, are in
-[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md). [PLAN.md](PLAN.md) is the source of truth for the
-architecture and the schedule; [RULES.md](RULES.md) and [CLAUDE.md](CLAUDE.md) hold the working rules.
+[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md). [PLAN.md](../PLAN.md) is the source of truth for the
+architecture and the schedule; [RULES.md](../RULES.md) and [../CLAUDE.md](CLAUDE.md) hold the working rules.
 
 ## Quick start
 
