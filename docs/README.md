@@ -165,7 +165,8 @@ ultrasonic ranges ───►  echo confirmation ──────────
   confused with it. Beyond the end of a segment the path continues straight along its final heading
   (clamping to the last point leaves a yaw error at the end).
 - **`ManeuverFsm`** (Idle / Approach / ReverseIn / Done / Abort): the vehicle stops at the end of
-  each segment, changes gear **only at a standstill**, then drives the next one.
+  each segment, changes gear **only at a standstill**, then drives the next one. Details in the next
+  section.
 - **`LongitudinalController`:** reference speed = min(profile speed, braking curve for the distance to
   go), ramped, with feedforward, a lead compensation for the actuator lag and a PI term.
 - **Abort.** A low echo in the driving direction (closer than 0.25 m + 0.5 s · v + v²/4 m) brakes
@@ -174,6 +175,78 @@ ultrasonic ranges ───►  echo confirmation ──────────
   aborts. The abort is **not map-aware**: an echo is "low" if it is short, even when the prior map
   explains it. That is why paths reverse at 0.6 m/s (a 0.4 m gap beside a parked car at 1 m/s would
   abort). Comparing the echo with the range the map predicts is the proper fix.
+
+## Maneuver state machine
+
+`ManeuverFsm` decides, once per control step, **which gear is engaged, whether the steering and the
+speed controller are allowed to act, and when the cursor moves to the next segment**. It does not
+compute any command itself. It sees only numbers the controller hands it, so it is a plain function
+of its inputs and its three timers (`control/include/psim/control/maneuver_fsm.hpp`).
+
+**Inputs** (`ManeuverInput`): the time; whether there is a path and whether it is a new one; the
+direction of the current segment and whether it is the last; the distance to its end; the speed
+(magnitude); the nearest confirmed echo in the driving direction (`range_ahead`, from the
+controller's echo confirmation, absent when there is none).
+**Outputs** (`ManeuverOutput`): the state, the gear, `steer` and `drive` (enable the lateral and the
+longitudinal controller), and `advance_segment`.
+
+```
+                  path arrives                    last segment finished, at rest
+         ┌──► Approach (forward segment) ─────────────────────────────────┐
+         │        │ ▲                                                       ▼
+ Idle ───┤        │ │  segment finished at rest, next one has the other     Done
+         │        ▼ │  direction (gear change, dwell, then drive)           ▲
+         └──► ReverseIn (reverse segment) ────────────────────────────────┘
+
+ Approach / ReverseIn ── echo closer than the abort range for 40 ms ──► Abort
+ any state ── a different path (or no path) ──► Idle, evaluated again in the same step
+ Done and Abort are final: nothing but a new path leaves them.
+```
+
+| State | Meaning | Gear | `steer` | `drive` |
+|---|---|---|---|---|
+| **Idle** | no path | Park | no | no |
+| **Approach** | driving a forward segment | Drive | yes | after the dwell (below) |
+| **ReverseIn** | driving a reverse segment | Reverse | yes | after the dwell |
+| **Done** | the last segment is finished, the car is parked | Park | no | no |
+| **Abort** | an obstacle was too close; braked to a standstill | Park | no | no |
+
+Park means the actuator brakes at its maximum deceleration to a standstill. Approach and ReverseIn
+are not separate logic: the state is simply the direction of the current segment, recomputed every
+step, so the *only* way from one to the other is the cursor advancing to a segment of the other
+direction.
+
+**Transitions and their logic**
+
+| Transition | Condition | Parameter |
+|---|---|---|
+| any → Idle | no path, or a path that differs from the previous one (the controller compares size, first and last point) | – |
+| Idle → Approach / ReverseIn | a path is present: the direction of its first segment decides; the first segment may **start at once** (no dwell) | – |
+| Approach / ReverseIn → **Abort** | `range_ahead` < `abort_range_at(speed)` = 0.25 m + 0.5 s · v + v²/4 m, continuously for 40 ms. The range is 0.25 m at rest, 0.64 m at 0.6 m/s, 1.0 m at 1 m/s | `abort_range`, `abort_reaction_time`, `abort_decel`, `abort_confirm` |
+| segment finished | distance to the segment's end ≤ 5 cm **and** speed < 0.05 m/s, continuously for 200 ms | `end_tolerance`, `standstill_speed`, `standstill_confirm` |
+| … then, not the last segment | `advance_segment`: the cursor moves to the next segment; the gear and steering follow in the next step; `drive` stays off for the **gear dwell** of 0.6 s | `gear_dwell` |
+| … then, the last segment → **Done** | gear Park, steering released | – |
+
+Order inside one step: first a new path resets everything; then Done/Abort return immediately; then
+the abort test; then the state and gear for the current segment; and last the end-of-segment test.
+So an obstacle can abort a maneuver while it is waiting out the gear dwell (the range at rest is
+0.25 m), and the end-of-segment test never runs in the same step as an abort.
+
+**A segment change, step by step** (forward to reverse): the car reaches the end of the forward
+segment and the speed controller brings it to rest (it stops by its own distance-to-go limit) →
+after 200 ms at rest `advance_segment` fires → in the next step the state is ReverseIn, the gear
+command becomes Reverse (the actuator model changes gear only at a standstill) and the steering
+starts to move to the new segment's first heading, but `drive` is still off → after 0.6 s the
+speed controller may accelerate backwards.
+
+**Example, S3 with the EKF:** Approach from 0 s; the gear command goes Drive → Reverse at 7.3 s
+(the forward segment is done and the dwell starts); ReverseIn until 28.5 s; then Done with gear
+Park. S2–S4 paths have exactly these two segments (the reverse arc and the final straight are one
+reverse segment).
+
+**Not implemented:** PLAN.md section 7.8 lists an optional *Correct* state (a short forward
+correction after the reverse). It needs the planner to produce it. Also missing: leaving Abort
+without a new path, and an abort that looks at the prior map (see the controller notes above).
 
 ## Steering laws
 
