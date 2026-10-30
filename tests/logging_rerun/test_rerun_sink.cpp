@@ -78,6 +78,12 @@ TEST(RerunSink, TheDisplayFlipDoesNotChangeWhatIsLogged) {
               0.05 * static_cast<double>(size_after(50, plain)));
 }
 
+TEST(RerunSink, HidingTheBeamsWithoutAnEchoMakesTheRecordingSmaller) {
+  RerunSinkOptions hidden;
+  hidden.draw_no_echo_beams = false;
+  EXPECT_LT(size_after(100, hidden), size_after(100, {}));
+}
+
 TEST(RerunSink, AnEstimatorWithoutACovarianceStillWorks) {
   EXPECT_GT(size_after(20, {}, false), 0U);
 }

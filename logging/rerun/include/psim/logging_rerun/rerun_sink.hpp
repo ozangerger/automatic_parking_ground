@@ -23,7 +23,10 @@ struct RerunSinkOptions {
   // not affected.
   bool flip_y{true};
   double uss_no_echo_length{4.0};  // m: how long a beam without an echo is drawn
-  int trail_every{5};              // snapshots between updates of the two trails
+  // Beams without an echo (nothing within range, or a dropout) are drawn dim and thin; false hides
+  // them. They are not detections.
+  bool draw_no_echo_beams{true};
+  int trail_every{5};  // snapshots between updates of the two trails
   int ellipse_points{48};
   double ellipse_sigmas{2.0};
 };
@@ -34,8 +37,9 @@ struct RerunSinkOptions {
 // simulation time, as the "sim_time" timeline. The Rerun headers stay out of this header.
 //
 // Entities: world/obstacles/*, world/slot, world/truth_car, world/est_car, world/trail_truth,
-// world/trail_est, world/est_ellipse, world/uss_rays, world/path, plots/pos_err (m), plots/yaw_err
-// (deg), plots/nis, plots/steer_cmd (deg), plots/steer_actual (deg), plots/speed (m/s).
+// world/trail_est, world/est_ellipse, world/uss_echoes, world/uss_no_echo, world/path,
+// plots/pos_err (m), plots/yaw_err (deg), plots/nis, plots/steer_cmd (deg), plots/steer_actual
+// (deg), plots/speed (m/s).
 class RerunSink final : public ISnapshotSink {
  public:
   // Logs the static scene. Throws std::invalid_argument without an output (see RerunSinkOptions)

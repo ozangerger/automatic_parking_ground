@@ -22,10 +22,12 @@ const rerun::Color kEstimate{0xeb, 0x68, 0x34};
 const rerun::Color kThird{0x1b, 0xaf, 0x7a};
 const rerun::Color kObstacle{0x9a, 0x99, 0x92};
 const rerun::Color kInk{0x52, 0x51, 0x4e};
-const rerun::Color kNoEcho{0xc3, 0xc2, 0xb7};
+// Beams without an echo (free space, a dropout) are context, not detections: dim and thin.
+const rerun::Color kNoEcho{0x4a, 0x49, 0x46};
 
 constexpr float kLineWidth = 1.5F;
 constexpr float kThinLineWidth = 0.8F;
+constexpr float kNoEchoWidth = 0.4F;
 constexpr float kPlotWidth = 1.2F;
 constexpr double kRadToDeg = 180.0 / kPi;
 
@@ -152,17 +154,29 @@ struct RerunSink::Impl {
     }
 
     if (!s.uss.empty()) {
-      std::vector<rerun::LineStrip2D> beams;
-      std::vector<rerun::Color> colors;
-      beams.reserve(s.uss.size());
+      // Two entities, so that the echoes stay readable and the empty beams can be hidden.
+      std::vector<rerun::LineStrip2D> echoes;
+      std::vector<rerun::LineStrip2D> empty;
       for (const UssRay& ray : s.uss) {
         const SceneSegment segment = ray_segment(ray, options.uss_no_echo_length);
-        beams.push_back(strip({segment.from, segment.to}));
-        colors.push_back(ray.range.has_value() ? kThird : kNoEcho);
+        (ray.range.has_value() ? echoes : empty).push_back(strip({segment.from, segment.to}));
       }
-      rec.log("world/uss_rays", rerun::LineStrips2D(std::move(beams))
-                                    .with_colors(colors)
-                                    .with_radii(rerun::Radius::ui_points(kThinLineWidth)));
+      if (echoes.empty()) {
+        rec.log("world/uss_echoes", rerun::Clear::FLAT);
+      } else {
+        rec.log("world/uss_echoes", rerun::LineStrips2D(std::move(echoes))
+                                        .with_colors(kThird)
+                                        .with_radii(rerun::Radius::ui_points(kThinLineWidth)));
+      }
+      if (options.draw_no_echo_beams) {
+        if (empty.empty()) {
+          rec.log("world/uss_no_echo", rerun::Clear::FLAT);
+        } else {
+          rec.log("world/uss_no_echo", rerun::LineStrips2D(std::move(empty))
+                                           .with_colors(kNoEcho)
+                                           .with_radii(rerun::Radius::ui_points(kNoEchoWidth)));
+        }
+      }
     }
 
     if (!s.planned_path.points.empty() && !same_path(s.planned_path, logged_path)) {
