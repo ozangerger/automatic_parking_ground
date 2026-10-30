@@ -100,6 +100,9 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
 - TODO (PLAN.md section 14): LQR and MPC as further `LateralController`s; MPC needs its own small QP solver (only Eigen allowed).
 
 ## Planning (planning/)
+- The planning roadmap (decided 2026-10-30: perpendicular parking only, comfort first then robustness, obstacles in the lot and one the map lacks,
+  replanning later) is PLAN.md section 7.7b and the Day 3 table in section 12: planner axis and benchmark, jerk-limited speed profile,
+  curvature-continuous (clothoid) generator, map-aware abort, scenarios S6 and S7, Reeds-Shepp, Hybrid A*, smoothing, planner selector.
 - `SlotDetector` (stage 1: the marked slots of the `PriorMap`, kept when the vehicle fits and nothing
   touches the outline; nearest to a pose), `PathGenerator` (line - arc - line, see below) and
   `apply_speed_profile` (trapezoid per direction run, 1 m/s forward, 0.6 m/s reversing, 0.1 m/s at the

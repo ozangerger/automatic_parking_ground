@@ -343,5 +343,6 @@ against the planned profile.
   delay, lag and rate limit inside the model; needs a small hand-written QP solver because only Eigen
   is allowed) as further `LateralController`s.
 - A stress scenario (model mismatch, higher speed) for the controller comparison.
-- Map-aware abort; replanning after an abort.
+- Planning (PLAN.md Day 3): jerk-limited speed profile, curvature-continuous generator, map-aware abort, obstacle scenarios, Reeds-Shepp,
+  Hybrid A*, smoothing, planner selector. Replanning after an abort stays later.
 - A Windows build check (PLAN step 2.6 took the Rerun sink instead; the Rerun sink is built, see the quick start).

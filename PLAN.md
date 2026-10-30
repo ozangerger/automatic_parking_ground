@@ -35,6 +35,7 @@ Out of scope (do not build)
 | Visualization | Step 1: CSV + `tools/plot.py` (matplotlib). Step 2: Rerun C++ SDK behind `-DUSE_RERUN=ON`. |
 | Seam between sim and viewer | `Snapshot` struct + `ISnapshotSink` interface. The sim never knows which viewer is attached. |
 | Determinism | Fixed timestep, integer-nanosecond sim time, seeded RNG per sensor, own Gaussian sampler |
+| Planning, Day 3 (decided 2026-10-30) | Perpendicular parking only. Priorities: ride comfort first, then robustness (any start pose, obstacles in the lot). Obstacles come from the scenario; the planner may also face an obstacle that is in the world but not in the prior map. Replanning, parallel and angled parking, building a map from ultrasonics and optimization-based planners are later. |
 
 ## 3. Architecture
 
@@ -244,6 +245,17 @@ Tests: statistics of the noise (mean and sigma over many samples within toleranc
 - SpeedProfile: trapezoidal speed along the path with max accel +/-1.0 m/s^2, max speed 1.0 m/s, and a stop at every direction change and at the end.
 - Tests: path ends at the slot pose within 1 cm; curvature never exceeds 1 / R_min; no path point collides with the prior map.
 
+### 7.7b Planning extension, Day 3 (perpendicular parking only)
+Why: the planned path fixes the lateral acceleration (v^2 times curvature) and, with the speed profile, the whole comfort and time of a maneuver; the three steering laws differ by less than the planner does. The current planner is line - arc - line from a start heading across the slot, planned once. Every element below is an `IPathPlanner` or a step of one, links only `msgs`, `geometry` and Eigen, has its own `PlannerVehicle`, and is deterministic (no RNG, fixed tie-breaks).
+- Planner axis and benchmark: `algorithms.planner` gets more kinds; `sim_main --planner X`, `sim_table --planners a,b,c`. A benchmark scenario set runs a grid of start poses (x, y, heading) and obstacle variants and reports per planner: success rate, path length, number of cusps, max curvature, max curvature rate, minimum clearance along the path, plus the existing precision and comfort metrics. Tests: the grid is reproducible, and the table lists every planner.
+- SpeedProfile, jerk-limited: an S-curve option (7 phases per direction run: jerk-limited acceleration, cruise, jerk-limited braking) next to the trapezoid, with `max_jerk`; the end speed of a run stays above zero (see 2.4). Tests: speed and acceleration continuous, jerk never above the limit, the distance covered equals the path length, same end conditions as the trapezoid.
+- CurvatureContinuousGenerator: line - clothoid - arc - clothoid - line. The clothoid's sharpness is bounded by what the steering can follow (steering rate limit divided by the speed, through d kappa / ds = sec^2(delta) / L * d delta / ds: about 0.3 1/m^2 at 0.6 m/s with a 0.5 rad/s rate limit, so a transition is under one meter). Same slot geometry and the same clearance rule as `PathGenerator`; the radius candidates are searched with the transitions included. Tests: curvature continuous (no jump above the sampling), curvature rate within the bound, ends exactly at the slot pose, clearance as before.
+- ReedsSheppPlanner: the analytic shortest path with cusps for a minimum radius (the 48 words), from any start pose to the slot pose, with the final straight into the slot as a constraint; every candidate is checked against the prior map and the first that keeps the clearance wins, ordered by length plus a cusp penalty. Removes the "start heading across the slot" limit. Tests: reaches the goal pose within 1 cm and 1e-3 rad, curvature never above 1 / R_min, word lengths against hand-computed cases, cusps counted.
+- HybridAStarPlanner: search over (x, y, yaw, direction) on a grid with steering primitives, a heuristic of the larger of the holonomic distance around obstacles and the Reeds-Shepp length, and a Reeds-Shepp shot to the slot at every expansion; clearance from the prior map with a configurable margin; fixed expansion order and tie-breaks; an expansion budget that ends in `PlanStatus::NoSolution`. For lots where the analytic planners are blocked. Tests: finds a path where Reeds-Shepp is blocked, the path is collision free with the margin, repeats exactly, respects the budget.
+- PathSmoother: post-processing of a searched path (shortcutting, then curvature-continuous fitting) that keeps the clearance and the endpoints; its value is measured by the comfort metrics before and after.
+- PlannerSelector: tries the planners in order (curvature-continuous perpendicular, Reeds-Shepp, Hybrid A*) and returns the first success, with the status of the last failure; reports which planner produced the path.
+- Map-aware abort (control, needed once obstacles are near the path): today an echo counts as "too close" whenever it is short (abort range 0.25 m + 0.5 s * v + v^2 / 4 m, 0.64 m at 0.6 m/s), so a path that passes an obstacle ahead of or behind the car within that range (a neighbor's corner during the reverse arc, a pillar in the aisle) aborts although the plan keeps its clearance. The controller compares the echo with the range the prior map predicts for the estimated pose (the EKF's `UssUpdate` already computes it) and aborts only for an echo that the map does not explain. Tests: no abort passing a mapped obstacle at 0.15 m, abort for an unmapped one, no abort in the burst of outliers.
+
 ### 7.8 Control (3)
 - LateralController: pure pursuit on the rear axle (works for reverse), lookahead = clamp(k * |v|, min, max); output steering angle, rate-limited to what the actuator can do.
 - LongitudinalController: PI on speed tracking the speed profile; convert to accel command; limit by distance-to-go (v <= sqrt(2 * a_max * d_remaining)).
@@ -276,6 +288,9 @@ For each tick at time t:
 | S3 | Same, controller on the ESTIMATE | Closed loop with fusion | Final error < 10 cm, < 2 deg, no collision |
 | S4 | Same with degraded sensors (odometry scale error 3%, gyro bias 0.01 rad/s, 10% USS dropouts, one outlier burst) | Show where fusion matters | Reports metrics; EKF with USS updates must beat dead reckoning on RMSE |
 | S5 (stretch) | Parallel parking | New path type | Same as S3 |
+| S6 | Perpendicular park in a lot with extra obstacles (a pillar near the approach, a car parked partly into the aisle, a narrow slot), prior map correct | Planners that must avoid obstacles | Within the S3 limits, no collision, clearance of the plan kept |
+| S7 | S6 with one obstacle in the world that is not in the prior map | Map-aware abort, the "wrong prior map" case | No contact: the car stops before it (replanning is later) |
+| B1 | Benchmark: a grid of start poses (x, y, heading) around the slot, with and without the S6 obstacles | Compare the planners | Reported per planner: success rate, length, cusps, curvature, clearance, comfort |
 
 Each scenario is a JSON file plus a test or a metrics check that runs headless in CI.
 
@@ -351,6 +366,26 @@ If the checkpoint slips by more than an hour, cut GnssRef and the staggered USS 
 Checkpoint 2 (end of 2.2): EKF with USS updates has lower position RMSE than dead reckoning in S4.
 Checkpoint 3 (end of 2.5): S3 parks the car with the final error from section 9.
 
+### Day 3: planning (about 14 hours), perpendicular parking only
+
+Order: comfort first (3.2, 3.3), then robustness (3.4 to 3.9). Replanning is not part of it.
+
+| Step | Work | Time |
+|---|---|---|
+| 3.1 | Planner axis (`--planner`, `sim_table --planners`) and the benchmark B1 with planner metrics (cusps, max curvature and curvature rate, clearance along the path) | 1.5 h |
+| 3.2 | SpeedProfile: jerk-limited S-curve next to the trapezoid; compare longitudinal jerk and time | 1 h |
+| 3.3 | CurvatureContinuousGenerator (clothoid transitions); compare lateral jerk | 1.5 h |
+| 3.4 | Map-aware abort (an echo explained by the prior map does not abort) | 1.5 h |
+| 3.5 | Scenarios S6 (obstacles in the lot) and S7 (an unmapped obstacle: `"unmapped"` obstacles in the world, not in the ECU's map); planner clearance margin as a parameter | 1 h |
+| 3.6 | ReedsSheppPlanner with the collision filter: any start pose | 2 h |
+| 3.7 | HybridAStarPlanner with the Reeds-Shepp shot | 3 h |
+| 3.8 | PathSmoother for searched paths; compare comfort before and after | 1.5 h |
+| 3.9 | PlannerSelector with fallback and the status of the last failure | 1 h |
+
+Checkpoint 4 (end of 3.3): S2 and S3 still pass their limits, and the maximum lateral jerk and the maximum longitudinal jerk of the S3 maneuver are lower than the baseline of the trapezoid and line - arc - line planner (`out/S3_perpendicular_estimate/comfort.md`: 0.10 m/s^3 lateral and 1.8 m/s^3 longitudinal, mean of 20 seeds) without a longer maneuver time than the baseline's 28.5 s plus 10 %.
+Checkpoint 5 (end of 3.7): on B1 with the S6 obstacles, the proposed target is a success rate of at least 95 % of the start poses within the S3 limits and with no collision, and S6 and S7 pass.
+Not in Day 3: replanning (after an abort or a large tracking error), parallel and angled parking, building a map from the ultrasonics, optimization-based planners (they need the hand-written solver of the MPC TODO).
+
 ## 13. Cut list (in this order, if behind)
 
 1. Rerun sink (keep CSV and matplotlib)
@@ -359,6 +394,8 @@ Checkpoint 3 (end of 2.5): S3 parks the car with the final error from section 9.
 4. Windows and macOS checks (keep following the portability rules)
 5. Planner: use the hardcoded path from step 2.3 and keep all the fusion work
 
+Day 3 (planning), in this order: 3.9 PlannerSelector (call the planners by hand), 3.8 PathSmoother, 3.7 Hybrid A* (Reeds-Shepp then covers any start pose when nothing blocks it), 3.5 S7. Keep 3.1 to 3.4: they make the comfort measurable and the obstacles safe.
+
 ## 14. Risks and open points
 
 - Pure pursuit in reverse near the end of the path can oscillate. Reduce lookahead near the end, or freeze the steering for the last 0.3 m.
@@ -366,7 +403,12 @@ Checkpoint 3 (end of 2.5): S3 parks the car with the final error from section 9.
 - USS update against a prior map is only informative near obstacles. In open space the estimate is carried by odometry and IMU only; that is expected and worth showing in the plots.
 - Rerun SDK version churn (see section 10).
 - TODO: more steering laws for the controller comparison: LQR (speed-scheduled gains on the linearized error model) and MPC (kinematic bicycle with the actuator delay, lag and rate limit inside the model, horizon 2-3 s; needs a small hand-written QP solver because only Eigen is allowed). Both are further `LateralController` implementations; the scenario field, `sim_table --controllers` and the metrics are in place. Add a stress scenario (model mismatch, higher speed) too: the nominal S2-S4 do not separate the laws.
-- Decide later: add a deliberately wrong prior map (offset obstacle) to test fusion robustness.
+- Decide later: add a deliberately wrong prior map (offset obstacle) to test fusion robustness. (S7 of Day 3 does the version with an obstacle that the map lacks.)
+- Day 3: the abort is not map-aware (see 7.7b), so an obstacle ahead of or behind the car within the abort range aborts the maneuver until step 3.4 is done; do 3.4 before 3.5.
+- Day 3: a search planner is slow under the sanitizers (ASan/UBSan, `-O1`). Unit tests use coarse grids and small lots; the benchmark B1 belongs to the slow label and runs in the release preset.
+- Day 3: determinism of the search (fixed expansion order, tie-breaks, no RNG, no hash-order iteration) and a bounded expansion budget, or a test can hang.
+- Day 3: the planner runs once at tick 0 on the estimate (S3) or the truth (S2), so a bad start estimate gives a bad plan; replanning is the later answer.
+- Day 3: the controller expects paths in segments of one direction, a path point spacing near 0.1 m, and `curvature` in the steering sense; a new planner must keep that, and the speed profile is applied per direction run after the geometry.
 
 ## 15. How to start in Claude Code
 
