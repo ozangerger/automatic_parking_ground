@@ -219,4 +219,4 @@ frame, maximum and RMS distance from the path, steering travel, minimum clearanc
   is allowed) as further `LateralController`s.
 - A stress scenario (model mismatch, higher speed) for the controller comparison.
 - Map-aware abort; replanning after an abort.
-- PLAN step 2.6: a Rerun sink *or* a Windows build check.
+- A Windows build check (PLAN step 2.6 took the Rerun sink instead; the Rerun sink is built, see the quick start).
