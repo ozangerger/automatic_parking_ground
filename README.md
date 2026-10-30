@@ -1,7 +1,15 @@
 # parking_sim
 
-A 2D parking simulator in C++17, built as a testbed for **sensor fusion and control**. A kinematic
-vehicle with sensors and actuator lag drives a perpendicular reverse-parking maneuver. The
+A 2D parking simulator in C++17, built as a testbed for **sensor fusion and control**.
+
+![A car drives past the slot, then reverses into it. The truth (blue, filled) and the EKF estimate
+(orange, dashed) stay within 12 cm of each other, despite wheel scale error, gyro bias, ultrasonic
+dropouts and an outlier burst.](docs/img/s4_degraded_replay.gif)
+
+*Scenario S4 (degraded sensors) replayed at 2.5x: planned path, true pose, the EKF's estimate and the
+estimate's position error. Made by [tools/animate.py](tools/animate.py) from a `sim_main` run (command in its docstring).*
+
+A kinematic vehicle with sensors and actuator lag drives a perpendicular reverse-parking maneuver. The
 simulator itself is deliberately thin; the algorithms on the ECU side are the point:
 
 | Stage | What it does | Implementations |
@@ -11,8 +19,42 @@ simulator itself is deliberately thin; the algorithms on the ECU side are the po
 | **Control** (`control/`) | estimate + path → steering, acceleration, gear | `ParkingController` with pure pursuit, Stanley or Kanayama steering |
 
 How the pieces are wired, and the rules that keep the ECU side honest, are in
-[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md). [PLAN.md](../PLAN.md) is the source of truth for the
-architecture and the schedule; [RULES.md](../RULES.md) and [CLAUDE.md](../CLAUDE.md) hold the working rules.
+[SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md). [PLAN.md](PLAN.md) is the source of truth for the
+architecture and the schedule; [RULES.md](RULES.md) and [CLAUDE.md](CLAUDE.md) hold the working rules.
+
+## How it fits together
+
+The ECU side (fusion, planning, control) never sees the truth: it receives stamped sensor messages
+through the vehicle interface, after latency, jitter and drops, and sends commands back the same way.
+The CMake dependency rules enforce this at configure time.
+
+```mermaid
+flowchart LR
+  subgraph SIM["Simulated vehicle and world (knows the truth)"]
+    direction TB
+    WORLD["world<br/>obstacles, slot"]
+    PLANT["plant<br/>kinematic bicycle, actuators"]
+    SENS["sensors<br/>wheel odometry, IMU,<br/>steering, ultrasonic"]
+    WORLD --> SENS
+    PLANT --> SENS
+  end
+  VIF["vehicle_if<br/>latency, jitter, drops"]
+  subgraph ECU["ECU side (sees stamped messages only)"]
+    direction TB
+    FUS["fusion<br/>DeadReckoning, EKF"]
+    PLAN["planning<br/>slot, path, speed profile"]
+    CTRL["control<br/>pure pursuit, Stanley, Kanayama"]
+    FUS -->|estimate| PLAN
+    FUS -->|estimate| CTRL
+    PLAN -->|path| CTRL
+  end
+  SENS -->|sensor messages| VIF
+  VIF -->|sensor messages| FUS
+  CTRL -->|steering, accel, gear| VIF
+  VIF -->|decoded commands| PLANT
+```
+
+Details of every box, the tick order and the determinism rules are in [SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md).
 
 ## Quick start
 
@@ -30,7 +72,7 @@ build/linux-gcc-debug/app/sim_table scenarios/S3_perpendicular_estimate.json --s
     --estimators ekf,dead_reckoning --controllers pure_pursuit,stanley,kanayama
 ```
 
-Optional Rerun viewer (needs `rerun-sdk==0.39.0`, see [CLAUDE.md](../CLAUDE.md)):
+Optional Rerun viewer (needs `rerun-sdk==0.39.0`, see [CLAUDE.md](CLAUDE.md)):
 `cmake --preset linux-rerun && cmake --build --preset linux-rerun`, then
 `build/linux-rerun/app/sim_main scenarios/S3_perpendicular_estimate.json --rerun` and `rerun out/S3_perpendicular_estimate/ekf/run.rrd`.
 

@@ -36,6 +36,9 @@ Recreate it with: `uv venv ~/.venvs/psim-tools && uv pip install --python ~/.ven
   timeline. The 2D view has y pointing down, so the sink negates y for display (`flip_y`). The Rerun-free parts
   (`logging/viewer_geometry.hpp`: footprint, ellipse, ray segment) are tested in every build; the sink's tests only with
   `USE_RERUN=ON`. Not checked visually (no way to look at the viewer in the session that built it).
+- `python3 tools/animate.py DIR` replays one closed-loop run as a GIF (map with both cars and trails, speed, steering, estimate error);
+  `docs/img/s4_degraded_replay.gif` is the README's hero image, the command is in the script's docstring. It needs Pillow too.
+  The landing page is the root `README.md` (diagram in Mermaid, images under `docs/img/`, light theme only).
 - Colors: truth = categorical slot 1, estimates = slots 2 and 3 (validated, dataviz palette); the two
   estimates also differ by dash pattern. The NIS panel appears only if `run.csv` has an `nis` column
   (planned with the ConsistencyMonitor in step 2.2).
