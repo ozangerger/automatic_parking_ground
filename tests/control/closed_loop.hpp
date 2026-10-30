@@ -9,7 +9,7 @@
 #include "psim/msgs/math.hpp"
 #include "psim/msgs/path_builder.hpp"
 #include "psim/plant/actuator_model.hpp"
-#include "psim/plant/bicycle_model.hpp"
+#include "psim/plant/kinematic_bicycle_model.hpp"
 
 namespace psim {
 
@@ -117,7 +117,7 @@ class ClosedLoop {
 
   Path path_;
   ParkingController controller_;
-  BicycleModel model_;
+  KinematicBicycleModel model_;
   ActuatorModel actuator_;
   VehicleCmd last_cmd_;
   int tick_{0};

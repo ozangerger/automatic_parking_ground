@@ -5,11 +5,11 @@
 #include "psim/msgs/messages.hpp"
 #include "psim/msgs/time.hpp"
 #include "psim/plant/actuator_model.hpp"
-#include "psim/plant/bicycle_model.hpp"
+#include "psim/plant/kinematic_bicycle_model.hpp"
 
 namespace psim {
 
-// Wires ActuatorModel and BicycleModel the way the app does, one 10 ms tick at a time:
+// Wires ActuatorModel and KinematicBicycleModel the way the app does, one 10 ms tick at a time:
 // commands are delivered, the actuator is stepped with the current speed, the model integrates.
 class PlantHarness {
  public:
@@ -42,11 +42,11 @@ class PlantHarness {
   [[nodiscard]] SimTime now() const { return now_; }
   [[nodiscard]] const VehicleState& state() const { return model_.state(); }
   [[nodiscard]] const ActuatorModel& actuator() const { return actuator_; }
-  [[nodiscard]] const BicycleModel& model() const { return model_; }
+  [[nodiscard]] const KinematicBicycleModel& model() const { return model_; }
 
  private:
   ActuatorModel actuator_;
-  BicycleModel model_;
+  KinematicBicycleModel model_;
   SimTime now_{};
 };
 

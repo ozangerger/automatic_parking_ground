@@ -358,7 +358,7 @@ add_text(slide, 7.4, BODY_TOP, 5.3, 4.9,
           "Motion: ẋ = v cos ψ, ẏ = v sin ψ, ψ̇ = v tan δ / L, v̇ = a.",
           "Yaw rate r = v tan δ / L; turn radius R = L / tan δ of the rear axle.",
           "No mass, no forces, no grip: any curvature is followed exactly.",
-          "In parking_sim: BicycleModel, RK4 at 10 ms, rear-axle reference."],
+          "In parking_sim: KinematicBicycleModel, RK4 at 10 ms, rear-axle reference."],
          size=18, bullets=True, space_pt=9)
 add_notes(slide,
           "This is what the plant does today. The two axle perpendiculars meet at the centre of "

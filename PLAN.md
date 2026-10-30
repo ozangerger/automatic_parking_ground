@@ -72,7 +72,7 @@ Element count per box
 |---|---|---|
 | Sim core | 4 | SimClock, Scheduler, ScenarioLoader, Rng |
 | World | 4 | Map, Slot, Raycaster, CollisionChecker |
-| Vehicle plant | 3 | BicycleModel, ActuatorModel, VehicleParams |
+| Vehicle plant | 3 | KinematicBicycleModel, ActuatorModel, VehicleParams |
 | Sensors | 5 | SensorBase, WheelOdometry, Imu, UltrasonicArray, GnssRef |
 | Vehicle interface | 4 | Message types, CommandDecoder, SignalEncoder, BusBuffer |
 | Fusion | 4 | Ekf, UssUpdate, TimeAlignBuffer, ConsistencyMonitor |
@@ -129,7 +129,7 @@ parking_sim/
   geometry/              Polygon, Segment, raycast, footprint-vs-polygon collision
   sim_core/              SimClock, Scheduler, ScenarioLoader, Rng
   world/                 Map, Slot
-  plant/                 VehicleParams, BicycleModel, ActuatorModel
+  plant/                 VehicleParams, KinematicBicycleModel, ActuatorModel
   sensors/               SensorBase, WheelOdometry, Imu, UltrasonicArray, GnssRef
   vehicle_if/            CommandDecoder, SignalEncoder, BusBuffer
   fusion/                Ekf, UssUpdate, TimeAlignBuffer, ConsistencyMonitor
@@ -200,7 +200,7 @@ Polymorphic bases: virtual destructor, deleted copy (C.35, C.67), `override` on 
 
 ### 7.2 Vehicle plant (3)
 - VehicleParams: wheelbase 2.7, track 1.6, rear overhang 0.9, front overhang 0.9 (length 4.5), width 1.8, max wheel steer angle 0.55 rad, max accel +/-2.0 m/s^2, max speed 2.0 m/s in parking.
-- BicycleModel (rear-axle reference): x' = v cos(yaw), y' = v sin(yaw), yaw' = v tan(delta) / L, v' = a. Integrate with RK4 at dt.
+- KinematicBicycleModel (rear-axle reference): x' = v cos(yaw), y' = v sin(yaw), yaw' = v tan(delta) / L, v' = a. Integrate with RK4 at dt.
 - ActuatorModel: steering rate limit 0.5 rad/s plus first-order lag tau = 0.15 s; accel first-order lag tau = 0.2 s; command-to-actuator delay 100 ms; gear change requires standstill (|v| < 0.05) and the model holds v = 0 until the gear matches the commanded direction.
 - Tests: constant steering gives a circle of radius L / tan(delta); straight line stays straight; steering rate limit respected; speed never changes sign without a gear change.
 
@@ -343,7 +343,7 @@ Portability rules (apply from the first commit)
 | 1.1 | Scaffold: CMake, presets, FetchContent, `.clang-tidy`, `msgs`, interfaces, empty targets with dependency rules, one passing test | 45 min |
 | 1.2 | sim_core: SimTime, Scheduler, Rng (own Gaussian), ScenarioLoader + tests | 45 min |
 | 1.3 | geometry + world: Polygon, raycast, collision, Map, Slot + tests | 1 h |
-| 1.4 | plant: VehicleParams, BicycleModel (RK4), ActuatorModel + tests | 1 h |
+| 1.4 | plant: VehicleParams, KinematicBicycleModel (RK4), ActuatorModel + tests | 1 h |
 | 1.5 | sensors: SensorBase, WheelOdometry, Imu, steering sensor, UltrasonicArray, GnssRef + tests | 1.5 h |
 | 1.6 | vehicle_if: messages, decoder, encoder, BusBuffer + tests | 45 min |
 | 1.7 | logging: Snapshot, ISnapshotSink, CsvSink, MultiSink, plot.py | 45 min |

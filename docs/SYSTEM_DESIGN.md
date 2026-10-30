@@ -43,7 +43,7 @@ ground truth. The boundary is enforced by the build, not by discipline.
 | **geometry** | polygons, segments, raycast, footprint-vs-polygon collision. Shared by the world and by the ECU's own map copy | `Polygon`, `raycast`, `clearance` |
 | **sim_core** | integer-nanosecond clock, periodic scheduler, seeded RNG, scenario loading | `SimClock`, `Scheduler`, `Rng`, `Scenario`, `load_scenario` |
 | **world** | the true map (obstacle polygons) and the slot | `Map`, `Slot` |
-| **plant** | vehicle truth: kinematic bicycle (rear-axle reference, RK4) and actuators | `BicycleModel`, `ActuatorModel`, `VehicleParams` |
+| **plant** | vehicle truth: kinematic bicycle (rear-axle reference, RK4) and actuators | `KinematicBicycleModel`, `ActuatorModel`, `VehicleParams` |
 | **sensors** | read truth plus the world, apply an error model, emit messages | `WheelOdometry`, `Imu`, `SteeringSensor`, `UltrasonicArray`, `GnssRef` (evaluation only) |
 | **vehicle_if** | the ECU boundary: clamp commands, encode sensor data, deliver messages after latency | `CommandDecoder`, `SignalEncoder`, `BusBuffer`, `LinkModel` |
 | **fusion** | state estimation | `DeadReckoning`, `Ekf`, `UssUpdate`, `TimeAlignBuffer`, `ConsistencyMonitor` |
@@ -98,7 +98,7 @@ Allowed link dependencies, in [cmake/DependencyRules.cmake](../cmake/DependencyR
                                                                          IController.compute(now, estimate, path, uss)
                                                                                            │
                                                                                            ▼ VehicleCmd
- truth ◄── BicycleModel ◄── ActuatorModel ◄── CommandDecoder ◄── BusBuffer(command bus) ◄──┘
+ truth ◄── KinematicBicycleModel ◄── ActuatorModel ◄── CommandDecoder ◄── BusBuffer(command bus) ◄──┘
 ```
 
 Everything crossing the boundary is a stamped value type. Messages of one signal are never

@@ -53,7 +53,7 @@ TEST(WheelOdometry, ForwardThenBackwardReturnsToZero) {
   (void)last_after_drive(odometry, 0.0, 1.0, 4.0);
   WheelOdomMsg msg;
   // Continue with a reversed car: new model, continue the sample clock after 4 s.
-  BicycleModel model{VehicleParams{}, VehicleState{Pose2D{}, -1.0}};
+  KinematicBicycleModel model{VehicleParams{}, VehicleState{Pose2D{}, -1.0}};
   for (int i = 1; i <= 400; ++i) {  // 4 s more, sampled every 20 ms from t = 4.02 s
     model.step(0.0, 0.0, SimTime{10'000'000});
     if (i % 2 == 0) {

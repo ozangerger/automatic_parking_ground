@@ -14,10 +14,10 @@ struct VehicleState {
 // Kinematic bicycle model referenced to the rear axle:
 //   x' = v cos(yaw), y' = v sin(yaw), yaw' = v tan(delta) / L, v' = a
 // integrated with RK4 holding the inputs constant over each step.
-class BicycleModel {
+class KinematicBicycleModel {
  public:
   // Throws std::invalid_argument for a non-positive wheelbase.
-  explicit BicycleModel(const VehicleParams& params, const VehicleState& initial = {});
+  explicit KinematicBicycleModel(const VehicleParams& params, const VehicleState& initial = {});
 
   // `steer_angle` is the actual front wheel angle (rad), `accel` the signed acceleration along
   // the body x axis (m/s^2). The yaw is wrapped into (-pi, pi].
@@ -28,7 +28,11 @@ class BicycleModel {
   // Quantities for the sensors: end state of the last step with the inputs of that step.
   [[nodiscard]] double steer_angle() const { return steer_angle_; }
   [[nodiscard]] double accel() const { return accel_; }
+  // Kinematic yaw rate v tan(delta) / L: the wheels roll without slip, so the body heading follows
+  // the steering instantly (no side slip angle, no tire forces, no yaw dynamics). Not a dynamic
+  // bicycle model's state; fine at parking speeds, wrong near the friction limit.
   [[nodiscard]] double yaw_rate() const;
+  // v * yaw_rate (centripetal, no-slip), the lateral acceleration of the rear axle center.
   [[nodiscard]] double lateral_accel() const;
 
  private:

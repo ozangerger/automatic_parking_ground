@@ -107,7 +107,7 @@ TEST(LongitudinalController, TheIntegralDoesNotWindUpWhileSaturated) {
 TEST(LongitudinalController, TracksASpeedStepOnTheRealActuator) {
   LongitudinalController c;
   ActuatorModel actuator{VehicleParams{}};
-  BicycleModel model{VehicleParams{}};
+  KinematicBicycleModel model{VehicleParams{}};
   double peak = 0.0;
   double settled_at = -1.0;
   for (int i = 0; i < 1000; ++i) {  // 10 s

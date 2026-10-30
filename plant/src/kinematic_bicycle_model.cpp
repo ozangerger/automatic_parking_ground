@@ -1,4 +1,4 @@
-#include "psim/plant/bicycle_model.hpp"
+#include "psim/plant/kinematic_bicycle_model.hpp"
 
 #include <cmath>
 #include <stdexcept>
@@ -26,20 +26,22 @@ Vec4 operator+(const Vec4& a, const Vec4& b) {
 
 Vec4 operator*(double s, const Vec4& a) { return {s * a.x, s * a.y, s * a.yaw, s * a.v}; }
 
+// Kinematic model: yaw' = v * curvature with curvature = tan(delta) / L (no slip, no yaw dynamics).
 Vec4 derivative(const Vec4& s, double curvature, double accel) {
   return {s.v * std::cos(s.yaw), s.v * std::sin(s.yaw), s.v * curvature, accel};
 }
 
 }  // namespace
 
-BicycleModel::BicycleModel(const VehicleParams& params, const VehicleState& initial)
+KinematicBicycleModel::KinematicBicycleModel(const VehicleParams& params,
+                                             const VehicleState& initial)
     : params_{params}, state_{initial} {
   if (!(params.wheelbase > 0.0)) {
-    throw std::invalid_argument("BicycleModel: wheelbase must be positive");
+    throw std::invalid_argument("KinematicBicycleModel: wheelbase must be positive");
   }
 }
 
-void BicycleModel::step(double steer_angle, double accel, SimTime dt) {
+void KinematicBicycleModel::step(double steer_angle, double accel, SimTime dt) {
   const double h = to_seconds(dt);
   const double curvature = std::tan(steer_angle) / params_.wheelbase;
 
@@ -56,10 +58,11 @@ void BicycleModel::step(double steer_angle, double accel, SimTime dt) {
   accel_ = accel;
 }
 
-double BicycleModel::yaw_rate() const {
+double KinematicBicycleModel::yaw_rate() const {
+  // Kinematic (no-slip) yaw rate, the same expression as the yaw' of the state equations.
   return state_.v * std::tan(steer_angle_) / params_.wheelbase;
 }
 
-double BicycleModel::lateral_accel() const { return state_.v * yaw_rate(); }
+double KinematicBicycleModel::lateral_accel() const { return state_.v * yaw_rate(); }
 
 }  // namespace psim

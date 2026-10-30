@@ -5,7 +5,7 @@
 
 #include "psim/msgs/messages.hpp"
 #include "psim/msgs/time.hpp"
-#include "psim/plant/bicycle_model.hpp"
+#include "psim/plant/kinematic_bicycle_model.hpp"
 #include "psim/sensors/truth.hpp"
 
 namespace psim {
@@ -22,7 +22,7 @@ template <typename Callback>
 void drive(double steer, double speed, double duration_s, double sample_period_s,
            Callback&& on_sample) {
   constexpr SimTime kDt{10'000'000};
-  BicycleModel model{VehicleParams{}, VehicleState{Pose2D{}, speed}};
+  KinematicBicycleModel model{VehicleParams{}, VehicleState{Pose2D{}, speed}};
   const int ticks = static_cast<int>(std::lround(duration_s / to_seconds(kDt)));
   const int every = static_cast<int>(std::lround(sample_period_s / to_seconds(kDt)));
   SimTime now{};

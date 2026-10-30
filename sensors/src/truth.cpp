@@ -2,7 +2,7 @@
 
 namespace psim {
 
-VehicleTruth make_truth(SimTime t, const BicycleModel& model) {
+VehicleTruth make_truth(SimTime t, const KinematicBicycleModel& model) {
   VehicleTruth truth;
   truth.t = t;
   truth.pose = model.state().pose;

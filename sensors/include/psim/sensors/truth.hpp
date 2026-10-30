@@ -2,7 +2,7 @@
 
 #include "psim/msgs/time.hpp"
 #include "psim/msgs/types.hpp"
-#include "psim/plant/bicycle_model.hpp"
+#include "psim/plant/kinematic_bicycle_model.hpp"
 
 namespace psim {
 
@@ -17,6 +17,6 @@ struct VehicleTruth {
   double lateral_accel{0.0};  // m/s^2 along the body y axis
 };
 
-[[nodiscard]] VehicleTruth make_truth(SimTime t, const BicycleModel& model);
+[[nodiscard]] VehicleTruth make_truth(SimTime t, const KinematicBicycleModel& model);
 
 }  // namespace psim

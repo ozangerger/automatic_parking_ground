@@ -17,7 +17,7 @@
 #include "psim/planning/perpendicular_planner.hpp"
 #include "psim/planning/slot_detector.hpp"
 #include "psim/plant/actuator_model.hpp"
-#include "psim/plant/bicycle_model.hpp"
+#include "psim/plant/kinematic_bicycle_model.hpp"
 #include "psim/sensors/gnss_ref.hpp"
 #include "psim/sensors/imu.hpp"
 #include "psim/sensors/sensor_config.hpp"
@@ -355,7 +355,7 @@ class Simulation {
   Map map_;
   SensorConfig config_;
 
-  BicycleModel model_;
+  KinematicBicycleModel model_;
   ActuatorModel actuator_;
   WheelOdometry odometry_;
   Imu imu_;
